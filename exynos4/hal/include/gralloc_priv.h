@@ -142,6 +142,7 @@ struct private_handle_t {
 
     /* Following members are for ION memory only */
     int     ion_client;
+    void    *ion_memory;
 
     uint64_t backing_store;
     uint64_t producer_usage;
@@ -171,10 +172,10 @@ struct private_handle_t {
     height(0),
     bpp(0),
     stride(0),
-    ion_client(0),
     yaddr(0),
     uoffset(0),
-    voffset(0)
+    voffset(0),
+    ion_client(0)
     {
         version = sizeof(native_handle);
         numFds = sNumFds;
@@ -202,10 +203,10 @@ struct private_handle_t {
     height(0),
     bpp(0),
     stride(0),
-    ion_client(0),
     yaddr(0),
     uoffset(0),
-    voffset(0)
+    voffset(0),
+    ion_client(0)
     {
         version = sizeof(native_handle);
         numFds = sNumFds;
