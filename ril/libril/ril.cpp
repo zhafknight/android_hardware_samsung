@@ -169,6 +169,23 @@ extern "C" const char * rilSocketIdToString(RIL_SOCKET_ID socket_id);
 extern "C"
 char rild[MAX_SOCKET_NAME_LENGTH] = SOCKET_NAME_RIL;
 
+extern "C"
+char ril_service_name_base[MAX_SOCKET_NAME_LENGTH] = SOCKET_NAME_RIL;
+extern "C"
+char ril_service_name[MAX_SOCKET_NAME_LENGTH] = SOCKET_NAME_RIL;
+
+extern "C"
+void rilc_thread_pool() {
+//    joinRpcThreadpool();
+}
+
+extern "C"
+void RIL_setServiceName(const char * s) {
+    strncpy(ril_service_name, s, MAX_SOCKET_NAME_LENGTH);
+}
+
+
+
 #define RIL_VENDOR_COMMANDS_OFFSET 10000
 
 /*******************************************************************/

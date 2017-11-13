@@ -18,6 +18,8 @@ LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libhardware_legacy \
     librilutils \
+    libhidlbase \
+    libhidltransport
 
 LOCAL_STATIC_LIBRARIES := \
     libprotobuf-c-nano-enable_malloc \
