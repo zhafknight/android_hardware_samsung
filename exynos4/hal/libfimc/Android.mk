@@ -40,7 +40,8 @@ LOCAL_CFLAGS += -DBOARD_USE_V4L2
 endif
 
 LOCAL_CFLAGS  += \
-	-DDEFAULT_FB_NUM=$(DEFAULT_FB_NUM)
+	-DDEFAULT_FB_NUM=$(DEFAULT_FB_NUM) \
+        -Wno-error
 
 LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/../include \
