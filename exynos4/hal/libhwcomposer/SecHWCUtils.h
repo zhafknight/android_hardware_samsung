@@ -184,6 +184,7 @@ struct hwc_context_t {
 #ifdef BOARD_USES_HDMI
     int                       hdmi_cable_status;
 #endif
+    int                       fb0_fd;
 };
 
 typedef enum _LOG_LEVEL {

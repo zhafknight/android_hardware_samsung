@@ -1039,6 +1039,9 @@ static int hwc_device_close(struct hw_device_t *dev)
                 SEC_HWC_Log(HWC_LOG_DEBUG, "%s::window_close() fail", __func__);
         }
 
+        // Close FB0
+        close(ctx->fb0_fd);
+
         free(ctx);
     }
     return ret;
@@ -1047,6 +1050,11 @@ static int hwc_device_close(struct hw_device_t *dev)
 static int hwc_blank(struct hwc_composer_device_1 *dev, int dpy, int blank)
 {
     struct hwc_context_t* ctx = (struct hwc_context_t*)dev;
+
+    if (ioctl(ctx->fb0_fd, FBIOBLANK, blank ? FB_BLANK_POWERDOWN : FB_BLANK_UNBLANK) < 0) {
+        ALOGE("%s Error %s in FBIOBLANK blank=%d", __FUNCTION__, strerror(errno), blank);
+    }
+
     if (blank) {
         // release our resources, the screen is turning off
         // in our case, there is nothing to do.
@@ -1172,6 +1180,14 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         goto err;
     }
 #endif
+
+// query LCD info
+    dev->fb0_fd = open("/dev/graphics/fb0", O_RDWR);
+    if (dev->fb0_fd < 0) {
+        ALOGE("%s: Failed to open framebuffer", __FUNCTION__);
+        status = -EINVAL;
+        goto err;
+    }
 
     SEC_HWC_Log(HWC_LOG_DEBUG, "%s:: hwc_device_open: SUCCESS", __func__);
 
