@@ -342,7 +342,7 @@ sd
 
             ump_reference_release((ump_handle)hnd->ump_mem_handle);
         } else {
-            ALOGE("%s Failed to create UMP handle", __func__);
+            ALOGE("%s Failed to create UMP handle umpid:%d", __func__, hnd->ump_id);
         }
 
     } else if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_PMEM) {

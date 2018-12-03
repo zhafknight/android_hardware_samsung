@@ -24,7 +24,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #ifndef GRALLOC_PRIV_H_
 #define GRALLOC_PRIV_H_
 
@@ -47,7 +47,7 @@
 #define HWC_HWOVERLAY 1
 
 #define GRALLOC_ARM_UMP_MODULE 1
-#define debug_level 0
+#define debug_level 1
 
 static int gMemfd = 0;
 
