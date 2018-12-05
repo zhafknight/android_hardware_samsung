@@ -69,7 +69,7 @@
 #endif
 
 const size_t WIN_FB0 = 2;
-const size_t NUM_HW_WINDOWS = 3;
+const size_t NUM_HW_WINDOWS = 5;
 const size_t NO_FB_NEEDED = NUM_HW_WINDOWS + 1;
 const size_t NUM_OF_WIN_BUF = 3;
 
