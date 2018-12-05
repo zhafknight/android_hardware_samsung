@@ -279,10 +279,6 @@ static int gralloc_register_buffer(gralloc_module_t const* module, buffer_handle
 
     ALOGD_IF(debug_level > 0, "%s flags=%x", __func__, hnd->flags);
 
-    if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
-        return 0;
-    }
-
 #ifdef USE_PARTIAL_FLUSH
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
         private_handle_rect *psRect;
@@ -307,6 +303,10 @@ static int gralloc_register_buffer(gralloc_module_t const* module, buffer_handle
 sd
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_ION)
         err = gralloc_map(module, handle, &vaddr); */
+
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
+        return 0;
+    }
 
     pthread_mutex_lock(&s_map_lock);
 
