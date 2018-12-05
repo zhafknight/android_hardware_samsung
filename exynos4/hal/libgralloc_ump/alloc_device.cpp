@@ -27,7 +27,7 @@
  * limitations under the License.
  */
 
-#define LOG_NDEBUG 0
+//#define LOG_NDEBUG 0
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
@@ -230,7 +230,7 @@ static int gralloc_alloc_ion(alloc_device_t *dev, size_t size, int usage,
 							 int *priv_alloc_flag, ump_handle *ump_mem_handle) {
 	unsigned int ion_flags = 0;
 	private_module_t* m;
-ALOGE("%s: BEGIN ump_mem_handle:(0x%x)", __func__, ump_mem_handle);
+
     if (!ion_dev_open) {
         ALOGE("%s ERROR, failed to open ion", __func__);
         return -1;
@@ -238,7 +238,7 @@ ALOGE("%s: BEGIN ump_mem_handle:(0x%x)", __func__, ump_mem_handle);
 
     m = reinterpret_cast<private_module_t*>(dev->common.module);
 
-    if (usage < 0 || usage & GRALLOC_USAGE_HWC_HWOVERLAY)
+    if (usage < 0 || usage & GRALLOC_USAGE_HWC_HWOVERLAY )
     {
         if ((format == HAL_PIXEL_FORMAT_RGBA_8888) || (format == HAL_PIXEL_FORMAT_RGB_565)) {
             *priv_alloc_flag |= (private_handle_t::PRIV_FLAGS_USES_ION | private_handle_t::PRIV_FLAGS_USES_HDMI);
@@ -273,8 +273,6 @@ ALOGE("%s: BEGIN ump_mem_handle:(0x%x)", __func__, ump_mem_handle);
         *ump_mem_handle = ump_ref_drv_ion_import(*ion_fd, UMP_REF_DRV_CONSTRAINT_USE_CACHE);
         ump_cpu_msync_now((ump_handle)*ump_mem_handle, UMP_MSYNC_CLEAN_AND_INVALIDATE, NULL, 0);
     }
-ALOGE("%s: END ump_mem_handle:(0x%x)", __func__, ump_mem_handle);
-
     return 0;
 }
 
@@ -300,7 +298,7 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
     }
 
     ret = -1;
-    if (usage & (GRALLOC_USAGE_HW_COMPOSER | GRALLOC_USAGE_HW_ION |GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_TEXTURE)) {
+    if (usage & (GRALLOC_USAGE_HW_COMPOSER | GRALLOC_USAGE_HW_ION)) {
         // the handle is guaranteed to have this usage flag set
         // if it is going to be used as an HWC layer (see hwcomposer.h in hardware/libhardware)
         ret = gralloc_alloc_ion(dev, size, usage, format, &ion_fd, &ion_paddr, &priv_alloc_flag, &ump_mem_handle);
@@ -625,8 +623,6 @@ static int alloc_device_alloc(alloc_device_t* dev, int w, int h, int format,
 
     int err;
 
-ALOGE("%s: handle:(0x%x)", __func__, pHandle);
-
     pthread_mutex_lock(&l_surface);
     if (l_usage & GRALLOC_USAGE_HW_FB)
         err = gralloc_alloc_framebuffer(dev, size, l_usage, pHandle, w, h, format, 32, stride);
@@ -648,8 +644,6 @@ static int alloc_device_free(alloc_device_t* dev, buffer_handle_t handle)
         return -EINVAL;
 
     ALOGD_IF(debug_level > 0, "%s",__func__);
-ALOGE("%s: handle:(0x%x)", __func__, handle);
-
 
     private_handle_t const* hnd = reinterpret_cast<private_handle_t const*>(handle);
     private_module_t* m = reinterpret_cast<private_module_t*>(dev->common.module);
@@ -665,25 +659,18 @@ ALOGE("%s: handle:(0x%x)", __func__, handle);
         close(hnd->fd);
 
     } else if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
-        ALOGD_IF(debug_level > 0, "%s xxxxxxxxxxx hnd->ump_mem_handle=%x hnd->ump_id=%d", __func__, hnd->ump_mem_handle, hnd->ump_id);
+        ALOGD_IF(debug_level > 0, "%s hnd->ump_mem_handle=%d hnd->ump_id=%d", __func__, hnd->ump_mem_handle, hnd->ump_id);
 
 #ifdef USE_PARTIAL_FLUSH
-
         if (!release_rect((int)hnd->ump_id))
             ALOGE("%s secure id: 0x%x, release error", __func__, (int)hnd->ump_id);
 #endif
-        if (!(hnd->flags & private_handle_t::PRIV_FLAGS_USES_ION)) {
-            ump_mapped_pointer_release((ump_handle)hnd->ump_mem_handle);
-            ALOGD_IF(debug_level > 0, "%s ump_mapped_pointer_release hnd->ump_mem_handle=%x hnd->ump_id=%d", __func__, hnd->ump_mem_handle, hnd->ump_id);
-            ump_reference_release((ump_handle)hnd->ump_mem_handle);
-            ALOGD_IF(debug_level > 0, "%s ump_reference_release hnd->ump_mem_handle=%x hnd->ump_id=%d", __func__, hnd->ump_mem_handle, hnd->ump_id);
-        } else {
-ALOGE("%s: handle:(0x%x) NOT RELEASING ION_UMP!!!!!!!!!! 0x%x ump_id:%d", __func__, handle, hnd->ump_mem_handle, hnd->ump_id);
-        }
+
+        ump_mapped_pointer_release((ump_handle)hnd->ump_mem_handle);
+        ump_reference_release((ump_handle)hnd->ump_mem_handle);
     }
 
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_ION) {
-ALOGE("%s: handle:(0x%x) ion_memory(0x%x) size:%d", __func__, handle, hnd->ion_memory, hnd->size);
         if (hnd->ion_memory != NULL)
             munmap(hnd->ion_memory, hnd->size);
         ion_free(hnd->fd);

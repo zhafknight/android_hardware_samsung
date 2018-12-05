@@ -330,8 +330,9 @@ sd
         if (UMP_INVALID_MEMORY_HANDLE != (ump_handle)hnd->ump_mem_handle) {
             hnd->base = (int)ump_mapped_pointer_get((ump_handle)hnd->ump_mem_handle);
             if (0 != hnd->base) {
-                hnd->lockState = private_handle_t::LOCK_STATE_MAPPED;
+                /* hnd->lockState = private_handle_t::LOCK_STATE_MAPPED; not in stock */
                 hnd->writeOwner = 0;
+                hnd->lockState = 0;
 
                 pthread_mutex_unlock(&s_map_lock);
                 return 0;
@@ -459,8 +460,6 @@ static int gralloc_unregister_buffer(gralloc_module_t const* module, buffer_hand
         }
 
         pthread_mutex_unlock(&s_map_lock);
-    } else {
-       ALOGE("%s secureID: %d, Not unregistered because not same process pid:%d current pid:%d ", __func__, (int)hnd->ump_id, hnd->pid, getpid());
     }
 
     return 0;
