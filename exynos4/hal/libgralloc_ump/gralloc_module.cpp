@@ -410,6 +410,10 @@ static int gralloc_unregister_buffer(gralloc_module_t const* module, buffer_hand
     }
 
     private_handle_t* hnd = (private_handle_t*)handle;
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
+        hnd->base = 0;
+        return 0;
+    }
 
 #ifdef USE_PARTIAL_FLUSH
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP)
@@ -420,47 +424,48 @@ static int gralloc_unregister_buffer(gralloc_module_t const* module, buffer_hand
             "%s [unregister] handle %p still locked (state=%08x)", __func__, hnd, hnd->lockState);
 
     /* never unmap buffers that were not registered in this process */
-    if (hnd->pid == getpid()) {
-        pthread_mutex_lock(&s_map_lock);
-        if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
-            ump_mapped_pointer_release((ump_handle)hnd->ump_mem_handle);
-            hnd->base = 0;
-            ump_reference_release((ump_handle)hnd->ump_mem_handle);
-            hnd->ump_mem_handle = (int)UMP_INVALID_MEMORY_HANDLE;
-            hnd->lockState  = 0;
-            hnd->writeOwner = 0;
-        } else if (hnd->flags & (private_handle_t::PRIV_FLAGS_USES_IOCTL | private_handle_t::PRIV_FLAGS_USES_HDMI)) {
-            if(hnd->base == 0) {
-                pthread_mutex_unlock(&s_map_lock);
-                return 0;
-            }
+    /* if (hnd->pid == getpid()) { not in stock */
 
-            if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
-                hnd->base = 0;
-                pthread_mutex_unlock(&s_map_lock);
-                return 0;
-            }
+    pthread_mutex_lock(&s_map_lock);
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
+        ump_mapped_pointer_release((ump_handle)hnd->ump_mem_handle);
+        hnd->base = 0;
+        ump_reference_release((ump_handle)hnd->ump_mem_handle);
+        hnd->ump_mem_handle = (int)UMP_INVALID_MEMORY_HANDLE;
+        hnd->lockState  = 0;
+        hnd->writeOwner = 0;
+    } else if (hnd->flags & (private_handle_t::PRIV_FLAGS_USES_IOCTL | private_handle_t::PRIV_FLAGS_USES_HDMI)) {
+        if(hnd->base == 0) {
+            pthread_mutex_unlock(&s_map_lock);
+            return 0;
+        }
 
-            if (hnd->flags & (private_handle_t::PRIV_FLAGS_USES_IOCTL | private_handle_t::PRIV_FLAGS_USES_HDMI)) {
-                if (munmap((void *) (hnd->base - hnd->offset), hnd->yaddr * 1024) < 0) {
-                    ALOGE("%s could not unmap %s", __func__, strerror(errno));
-                }
-            } else {
-                if (munmap((void *) (hnd->base - hnd->offset), hnd->offset + hnd->size) < 0) {
-                    ALOGE("%s could not unmap %s", __func__, strerror(errno));
-                }
-            }
-
+        if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
             hnd->base = 0;
             pthread_mutex_unlock(&s_map_lock);
             return 0;
-
-        } else {
-            ALOGE("%s unregistering non-UMP buffer not supported", __func__);
         }
 
+        if (hnd->flags & (private_handle_t::PRIV_FLAGS_USES_IOCTL | private_handle_t::PRIV_FLAGS_USES_HDMI)) {
+            if (munmap((void *) (hnd->base - hnd->offset), hnd->yaddr * 1024) < 0) {
+                ALOGE("%s could not unmap %s", __func__, strerror(errno));
+            }
+        } else {
+            if (munmap((void *) (hnd->base - hnd->offset), hnd->offset + hnd->size) < 0) {
+                ALOGE("%s could not unmap %s", __func__, strerror(errno));
+            }
+        }
+
+        hnd->base = 0;
         pthread_mutex_unlock(&s_map_lock);
+        return 0;
+
+    } else {
+        ALOGE("%s unregistering non-UMP buffer not supported", __func__);
     }
+
+    pthread_mutex_unlock(&s_map_lock);
+    /*} not in stock */
 
     return 0;
 }
