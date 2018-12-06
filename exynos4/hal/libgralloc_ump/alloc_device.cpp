@@ -27,7 +27,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
