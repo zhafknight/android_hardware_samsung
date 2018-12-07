@@ -61,6 +61,7 @@ static pthread_mutex_t sMapLock = PTHREAD_MUTEX_INITIALIZER;
 
 static int gSdkVersion = 0;
 static int s_ump_is_open = 0;
+
 #define PFX_NODE_MEM   "/dev/exynos-mem"
 
 /* we need this for now because pmem cannot mmap at an offset */
@@ -324,6 +325,8 @@ sd
    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
         hnd->ump_mem_handle = (int)ump_handle_create_from_secure_id(hnd->ump_id);
 
+        ALOGD_IF(debug_level > 0, "%s PRIV_FLAGS_USES_UMP hnd->ump_mem_handle=%d(%x)", __func__, hnd->ump_mem_handle, hnd->ump_mem_handle);
+
         if (UMP_INVALID_MEMORY_HANDLE != (ump_handle)hnd->ump_mem_handle) {
             hnd->base = (int)ump_mapped_pointer_get((ump_handle)hnd->ump_mem_handle);
             if (0 != hnd->base) {
@@ -413,14 +416,9 @@ static int gralloc_unregister_buffer(gralloc_module_t const* module, buffer_hand
     }
 
 #ifdef USE_PARTIAL_FLUSH
-    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
-        if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
-            ALOGE("%s: >>>>>>>>>>>>> SCREENSHOT PRIV_FLAGS_GRAPHICBUFFER????? NOT RELEASEING UMP_ID:%d, not clearing! ump_memhandle: 0x%08x", __func__, hnd->ump_id, hnd->ump_mem_handle);
-        } else {
-          if (!release_rect((int)hnd->ump_id))
-              ALOGE("%s secureID: 0x%x, release error", __func__, (int)hnd->ump_id);
-        }
-    }
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP)
+        if (!release_rect((int)hnd->ump_id))
+            ALOGE("%s secureID: 0x%x, release error", __func__, (int)hnd->ump_id);
 #endif
     ALOGE_IF(hnd->lockState & private_handle_t::LOCK_STATE_READ_MASK,
             "%s [unregister] handle %p still locked (state=%08x)", __func__, hnd, hnd->lockState);
@@ -433,11 +431,7 @@ static int gralloc_unregister_buffer(gralloc_module_t const* module, buffer_hand
         ump_mapped_pointer_release((ump_handle)hnd->ump_mem_handle);
         hnd->base = 0;
         ump_reference_release((ump_handle)hnd->ump_mem_handle);
-        if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
-            ALOGE("%s: >>>>>>>>>>>>> SCREENSHOT PRIV_FLAGS_GRAPHICBUFFER????? Release REFERENCE, not clearing! ump_memhandle: 0x%08x ", __func__, hnd->ump_mem_handle);
-        } else {
-            hnd->ump_mem_handle = (int)UMP_INVALID_MEMORY_HANDLE;
-        }
+        hnd->ump_mem_handle = (int)UMP_INVALID_MEMORY_HANDLE;
         hnd->lockState  = 0;
         hnd->writeOwner = 0;
     } else if (hnd->flags & (private_handle_t::PRIV_FLAGS_USES_IOCTL | private_handle_t::PRIV_FLAGS_USES_HDMI)) {
@@ -674,7 +668,7 @@ static int gralloc_perform(struct gralloc_module_t const* module,
             {
                 auto hnd =  va_arg(args, private_handle_t*);
                 auto outBackingStore = va_arg(args, uint64_t*);
-                *outBackingStore = hnd->ump_id;
+                *outBackingStore = hnd->backing_store;
                 ALOGV("%s: (%p) GRALLOC1_ADAPTER_PERFORM_GET_BACKING_STORE %llu", __func__,
                     hnd, *outBackingStore);
             } break;
