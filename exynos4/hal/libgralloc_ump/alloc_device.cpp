@@ -105,6 +105,11 @@ static uint64_t next_backing_store_id()
     return next_id++;
 }
 
+static int graphicbuffer_ump_id = 0;
+static private_handle_t* pGraphicbuffer_ump_handle = NULL;
+
+static int alloc_device_free(alloc_device_t* dev, buffer_handle_t handle);
+
 int gralloc_alloc_fimc1(size_t size, int usage,
                         buffer_handle_t* pHandle, int w, int h,
                         int format, int bpp, int stride_raw, int stride) {
@@ -286,7 +291,7 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
     ion_buffer ion_fd = 0;
     ion_phys_addr_t ion_paddr = 0;
     int priv_alloc_flag = private_handle_t::PRIV_FLAGS_USES_UMP;
-    int ret = 0;
+    int ret = -1;
 
     ALOGD_IF(debug_level > 0, "%s size=%d usage=0x%x format=0x%x\n", __func__, size, usage, format);
 
@@ -294,7 +299,22 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
 
     if (usage & GRALLOC_USAGE_HW_FIMC1) {
         ALOGD_IF(debug_level > 0, "%s usage = GRALLOC_USAGE_HW_FIMC1", __func__);
-        return gralloc_alloc_fimc1(size, usage, pHandle, w, h, format, bpp, stride_raw, stride);
+        ret = gralloc_alloc_fimc1(size, usage, pHandle, w, h, format, bpp, stride_raw, stride);
+ALOGE("%s: GRALLOC_USAGE_HW_FIMC1 pHandle:%08x w:%d h:%d format:%d bpp:%d", __func__, pHandle, w, h, format, bpp);
+        return ret;
+    }
+    if (usage & (GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_TEXTURE) && pGraphicbuffer_ump_handle) {
+        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Free graphicbuffer --- hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d size:%d",
+            __func__,
+            pGraphicbuffer_ump_handle
+            pGraphicbuffer_ump_handle->ump_id,
+            pGraphicbuffer_ump_handle->ump_mem_handle,
+            pGraphicbuffer_ump_handle->width,
+            pGraphicbuffer_ump_handle->height,
+            size);
+        private_handle_t* pGb_ump_handle = pGraphicbuffer_ump_handle;
+        pGraphicbuffer_ump_handle = NULL;
+        alloc_device_free(dev, pGb_ump_handle);
     }
 
     ret = -1;
@@ -329,6 +349,11 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
             if (UMP_INVALID_SECURE_ID != ump_id) {
                 private_handle_t* hnd;
 
+                // Mark static memory allocation as PRIV_FLAGS_GRAPHICBUFFER, we will not free this memory
+                if (usage & (GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_TEXTURE)) {
+		    priv_alloc_flag = priv_alloc_flag | private_handle_t::PRIV_FLAGS_GRAPHICBUFFER;
+                }
+
                 hnd = new private_handle_t(priv_alloc_flag, size, (int)cpu_ptr,
                 private_handle_t::LOCK_STATE_MAPPED, ump_id, ump_mem_handle, ion_fd < 0 ? 0 : ion_fd, 0, 0);
 
@@ -346,8 +371,7 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
                         psFRect->next = psRect;
                     }
 #endif
-
-                    hnd->backing_store = next_backing_store_id();
+                    hnd->backing_store = ump_id;
                     hnd->format = format;
                     hnd->usage = usage;
                     hnd->width = w;
@@ -360,7 +384,19 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
                     if (ion_fd >= 0)
                         hnd->ion_memory = ion_map(ion_fd, size, 0);
 
-                    ALOGD_IF(debug_level > 0, "%s hnd->format=0x%x hnd->uoffset=%d hnd->voffset=%d hnd->paddr=%x hnd->bpp=%d", __func__, hnd->format, hnd->uoffset, hnd->voffset, hnd->paddr, hnd->bpp);
+                    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
+                        pGraphicbuffer_ump_handle = hnd;
+
+                        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Creating graphicbuffer --- hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d size:%d",
+                           __func__,
+                           pGraphicbuffer_ump_handle,
+                           pGraphicbuffer_ump_handle->ump_id,
+                           pGraphicbuffer_ump_handle->ump_mem_handle,
+                           pGraphicbuffer_ump_handle->width,
+                           pGraphicbuffer_ump_handle->height,
+                           size);
+                    }
+
                     return 0;
                 } else {
                     ALOGE("%s failed to allocate handle", __func__);
@@ -629,6 +665,8 @@ static int alloc_device_alloc(alloc_device_t* dev, int w, int h, int format,
     else
         err = gralloc_alloc_buffer(dev, size, l_usage, pHandle, w, h, format, 0, (int)stride_raw, (int)stride);
 
+    ALOGE("%s: >>>>>>>>>>>>> hnd:%08x", __func__, pHandle);
+
     pthread_mutex_unlock(&l_surface);
 
     if (err < 0)
@@ -648,8 +686,20 @@ static int alloc_device_free(alloc_device_t* dev, buffer_handle_t handle)
     private_handle_t const* hnd = reinterpret_cast<private_handle_t const*>(handle);
     private_module_t* m = reinterpret_cast<private_module_t*>(dev->common.module);
 
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER && pGraphicbuffer_ump_handle) {
+        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Blocked freeing graphicbuffer --- current =>  hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d",
+           __func__,
+           pGraphicbuffer_ump_handle,
+           pGraphicbuffer_ump_handle->ump_id,
+           pGraphicbuffer_ump_handle->ump_mem_handle,
+           pGraphicbuffer_ump_handle->width,
+           pGraphicbuffer_ump_handle->height);
+       return 0;
+    }
+
     pthread_mutex_lock(&l_surface);
 
+    ALOGE("%s: >>>>>>>>>>>>> hnd:%08x flags:%08x ump_id:%d ump_mem_handle:%08x ion_memory:%08x", __func__, hnd, hnd->flags, hnd->ump_id, hnd->ump_mem_handle, hnd->ion_memory);
     if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
         /* free this buffer */
         const size_t bufferSize = m->finfo.line_length * m->info.yres;
@@ -659,18 +709,17 @@ static int alloc_device_free(alloc_device_t* dev, buffer_handle_t handle)
         close(hnd->fd);
 
     } else if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
-        ALOGD_IF(debug_level > 0, "%s hnd->ump_mem_handle=%d hnd->ump_id=%d", __func__, hnd->ump_mem_handle, hnd->ump_id);
-
 #ifdef USE_PARTIAL_FLUSH
         if (!release_rect((int)hnd->ump_id))
             ALOGE("%s secure id: 0x%x, release error", __func__, (int)hnd->ump_id);
 #endif
-
         ump_mapped_pointer_release((ump_handle)hnd->ump_mem_handle);
         ump_reference_release((ump_handle)hnd->ump_mem_handle);
     }
 
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_ION) {
+        ALOGE("%s: >>>>>>>>>>>>> PRIV_FLAGS_USES_ION", __func__);
+
         if (hnd->ion_memory != NULL)
             munmap(hnd->ion_memory, hnd->size);
         ion_free(hnd->fd);

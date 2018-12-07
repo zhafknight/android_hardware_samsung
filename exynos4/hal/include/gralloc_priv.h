@@ -104,6 +104,7 @@ struct private_handle_t {
         PRIV_FLAGS_USES_HDMI   = 0x00000010,
         PRIV_FLAGS_USES_ION    = 0x00000020,
         PRIV_FLAGS_NONE_CACHED = 0x00000040,
+        PRIV_FLAGS_GRAPHICBUFFER = 0x00000080,
     };
 
     enum {
