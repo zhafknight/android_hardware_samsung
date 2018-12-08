@@ -106,7 +106,8 @@ static uint64_t next_backing_store_id()
 }
 
 static int graphicbuffer_ump_id = 0;
-static private_handle_t* pGraphicbuffer_ump_handle = NULL;
+static int pGraphicbufferCount = 0;
+static int pGraphicbufferMemSize = 0;
 
 static int alloc_device_free(alloc_device_t* dev, buffer_handle_t handle);
 
@@ -303,19 +304,6 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
 ALOGE("%s: GRALLOC_USAGE_HW_FIMC1 pHandle:%08x w:%d h:%d format:%d bpp:%d", __func__, pHandle, w, h, format, bpp);
         return ret;
     }
-    if (usage & (GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_TEXTURE) && pGraphicbuffer_ump_handle) {
-        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Free graphicbuffer --- hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d size:%d",
-            __func__,
-            pGraphicbuffer_ump_handle
-            pGraphicbuffer_ump_handle->ump_id,
-            pGraphicbuffer_ump_handle->ump_mem_handle,
-            pGraphicbuffer_ump_handle->width,
-            pGraphicbuffer_ump_handle->height,
-            size);
-        private_handle_t* pGb_ump_handle = pGraphicbuffer_ump_handle;
-        pGraphicbuffer_ump_handle = NULL;
-        alloc_device_free(dev, pGb_ump_handle);
-    }
 
     ret = -1;
     if (usage & (GRALLOC_USAGE_HW_COMPOSER | GRALLOC_USAGE_HW_ION)) {
@@ -349,7 +337,7 @@ ALOGE("%s: GRALLOC_USAGE_HW_FIMC1 pHandle:%08x w:%d h:%d format:%d bpp:%d", __fu
             if (UMP_INVALID_SECURE_ID != ump_id) {
                 private_handle_t* hnd;
 
-                // Mark static memory allocation as PRIV_FLAGS_GRAPHICBUFFER, we will not free this memory
+                // Mark PRIV_FLAGS_GRAPHICBUFFER to do something special
                 if (usage & (GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_TEXTURE)) {
 		    priv_alloc_flag = priv_alloc_flag | private_handle_t::PRIV_FLAGS_GRAPHICBUFFER;
                 }
@@ -385,16 +373,19 @@ ALOGE("%s: GRALLOC_USAGE_HW_FIMC1 pHandle:%08x w:%d h:%d format:%d bpp:%d", __fu
                         hnd->ion_memory = ion_map(ion_fd, size, 0);
 
                     if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
-                        pGraphicbuffer_ump_handle = hnd;
+			pGraphicbufferCount++;
+			pGraphicbufferMemSize += size;
 
-                        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Creating graphicbuffer --- hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d size:%d",
+                        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Creating graphicbuffer --- hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d size:%d Count:%d TotalSize:%d",
                            __func__,
-                           pGraphicbuffer_ump_handle,
-                           pGraphicbuffer_ump_handle->ump_id,
-                           pGraphicbuffer_ump_handle->ump_mem_handle,
-                           pGraphicbuffer_ump_handle->width,
-                           pGraphicbuffer_ump_handle->height,
-                           size);
+                           hnd,
+                           hnd->ump_id,
+                           hnd->ump_mem_handle,
+                           hnd->width,
+                           hnd->height,
+                           size,
+                           pGraphicbufferCount,
+                           pGraphicbufferMemSize);
                     }
 
                     return 0;
@@ -686,17 +677,16 @@ static int alloc_device_free(alloc_device_t* dev, buffer_handle_t handle)
     private_handle_t const* hnd = reinterpret_cast<private_handle_t const*>(handle);
     private_module_t* m = reinterpret_cast<private_module_t*>(dev->common.module);
 
-    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER && pGraphicbuffer_ump_handle) {
-        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Blocked freeing graphicbuffer --- current =>  hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d",
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
+        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Blocked freeing graphicbuffer MEMORYLEAK! --- current =>  hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d",
            __func__,
-           pGraphicbuffer_ump_handle,
-           pGraphicbuffer_ump_handle->ump_id,
-           pGraphicbuffer_ump_handle->ump_mem_handle,
-           pGraphicbuffer_ump_handle->width,
-           pGraphicbuffer_ump_handle->height);
+           hnd,
+           hnd->ump_id,
+           hnd->ump_mem_handle,
+           hnd->width,
+           hnd->height);
        return 0;
     }
-
     pthread_mutex_lock(&l_surface);
 
     ALOGE("%s: >>>>>>>>>>>>> hnd:%08x flags:%08x ump_id:%d ump_mem_handle:%08x ion_memory:%08x", __func__, hnd, hnd->flags, hnd->ump_id, hnd->ump_mem_handle, hnd->ion_memory);
