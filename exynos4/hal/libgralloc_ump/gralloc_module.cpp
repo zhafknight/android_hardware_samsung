@@ -310,6 +310,16 @@ sd
 
     pthread_mutex_lock(&s_map_lock);
 
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
+        ALOGE("%s: --->>>> PRIV_FLAGS_GRAPHICBUFFER 1 ump_id:%d ump_mem_handle:%08x base:%08x", __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->base);
+        if (UMP_INVALID_MEMORY_HANDLE != (ump_handle)hnd->ump_mem_handle) {
+           // hnd->base = (int)ump_mapped_pointer_get((ump_handle)hnd->ump_mem_handle);
+           // pthread_mutex_unlock(&s_map_lock);
+           // return 0;
+        }
+        ALOGE("%s: --->>>> PRIV_FLAGS_GRAPHICBUFFER 2 ump_id:%d ump_mem_handle:%08x base:%08x", __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->base);
+    }
+
     if (!s_ump_is_open) {
         ump_result res = ump_open(); /* TODO: Fix a ump_close() somewhere??? */
         if (res != UMP_OK) {
@@ -411,6 +421,12 @@ static int gralloc_unregister_buffer(gralloc_module_t const* module, buffer_hand
 
     private_handle_t* hnd = (private_handle_t*)handle;
     if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
+        hnd->base = 0;
+        return 0;
+    }
+
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
+        ALOGE("%s: --->>>> PRIV_FLAGS_GRAPHICBUFFER ump_id:%d ump_mem_handle:%08x base:%08x", __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->base);
         hnd->base = 0;
         return 0;
     }

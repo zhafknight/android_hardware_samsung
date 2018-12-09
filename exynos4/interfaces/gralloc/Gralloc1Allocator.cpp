@@ -174,12 +174,12 @@ ALOGE("%s: ---->>>>> allocatedOn buffer:%d -> tmpStride:%d", __func__, i, tmpStr
     hidl_cb(error, stride, hidl_buffers);
         ALOGE("%s: ---->>>>> hidl_cb END", __func__);
 
-        ALOGE("%s: ---->>>>> NOT FREEING BUFFERS!!!", __func__);
+        ALOGE("%s: ---->>>>> BUFFERS!!!", __func__);
     // free the buffers
-//    for (const auto& buffer : buffers) {
-//        ALOGE("%s: ---->>>>> release", __func__);
- //       mDispatch.release(mDevice, buffer.getNativeHandle());
- //   }
+    for (const auto& buffer : buffers) {
+        ALOGE("%s: ---->>>>> release", __func__);
+        mDispatch.release(mDevice, buffer.getNativeHandle());
+    }
 ALOGE("%s: ---->>>>> END", __func__);
 
     return Void();
