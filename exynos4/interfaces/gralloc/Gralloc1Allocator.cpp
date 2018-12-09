@@ -120,6 +120,8 @@ Return<void> Gralloc1Allocator::dumpDebugInfo(dumpDebugInfo_cb hidl_cb) {
 
 Return<void> Gralloc1Allocator::allocate(const BufferDescriptor& descriptor,
                                          uint32_t count, allocate_cb hidl_cb) {
+ALOGE("%s: ---->>>>> BEGIN", __func__);
+
     IMapper::BufferDescriptorInfo descriptorInfo;
     if (!grallocDecodeBufferDescriptor(descriptor, &descriptorInfo)) {
         hidl_cb(Error::BAD_DESCRIPTOR, 0, hidl_vec<hidl_handle>());
@@ -142,6 +144,7 @@ Return<void> Gralloc1Allocator::allocate(const BufferDescriptor& descriptor,
         buffer_handle_t tmpBuffer;
         uint32_t tmpStride;
         error = allocateOne(desc, &tmpBuffer, &tmpStride);
+ALOGE("%s: ---->>>>> allocatedOn buffer:%d -> tmpStride:%d", __func__, i, tmpStride);
         if (error != Error::NONE) {
             break;
         }
@@ -149,6 +152,7 @@ Return<void> Gralloc1Allocator::allocate(const BufferDescriptor& descriptor,
         if (stride == 0) {
             stride = tmpStride;
         } else if (stride != tmpStride) {
+        ALOGE("%s: ---->>>>> allocatedOn buffer:%d Free tmpstride mismatch -> stride:%d tmpStride:%d", __func__, i, stride, tmpStride);
             // non-uniform strides
             mDispatch.release(mDevice, tmpBuffer);
             stride = 0;
@@ -166,12 +170,17 @@ Return<void> Gralloc1Allocator::allocate(const BufferDescriptor& descriptor,
     if (error == Error::NONE) {
         hidl_buffers.setToExternal(buffers.data(), buffers.size());
     }
+        ALOGE("%s: ---->>>>> hidl_cb BEGIN", __func__);
     hidl_cb(error, stride, hidl_buffers);
+        ALOGE("%s: ---->>>>> hidl_cb END", __func__);
 
+        ALOGE("%s: ---->>>>> NOT FREEING BUFFERS!!!", __func__);
     // free the buffers
-    for (const auto& buffer : buffers) {
-        mDispatch.release(mDevice, buffer.getNativeHandle());
-    }
+//    for (const auto& buffer : buffers) {
+//        ALOGE("%s: ---->>>>> release", __func__);
+ //       mDispatch.release(mDevice, buffer.getNativeHandle());
+ //   }
+ALOGE("%s: ---->>>>> END", __func__);
 
     return Void();
 }

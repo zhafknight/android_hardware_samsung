@@ -61,6 +61,7 @@ Return<void> Gralloc0Allocator::dumpDebugInfo(dumpDebugInfo_cb hidl_cb) {
 
 Return<void> Gralloc0Allocator::allocate(const BufferDescriptor& descriptor,
                                          uint32_t count, allocate_cb hidl_cb) {
+ALOGE("%s: ---->>>>> BEGIN", __func__);
     IMapper::BufferDescriptorInfo descriptorInfo;
     if (!grallocDecodeBufferDescriptor(descriptor, &descriptorInfo)) {
         hidl_cb(Error::BAD_DESCRIPTOR, 0, hidl_vec<hidl_handle>());
@@ -77,6 +78,8 @@ Return<void> Gralloc0Allocator::allocate(const BufferDescriptor& descriptor,
         buffer_handle_t tmpBuffer;
         uint32_t tmpStride;
         error = allocateOne(descriptorInfo, &tmpBuffer, &tmpStride);
+ALOGE("%s: ---->>>>> allocatedOn -> tmpStride:%d", __func__, tmpStride);
+
         if (error != Error::NONE) {
             break;
         }
@@ -84,6 +87,7 @@ Return<void> Gralloc0Allocator::allocate(const BufferDescriptor& descriptor,
         if (stride == 0) {
             stride = tmpStride;
         } else if (stride != tmpStride) {
+ALOGE("%s: ---->>>>> allocatedOn Free tmpstride mismatch -> tmpStride:%d stride:%d", __func__, tmpStride, stride);
             // non-uniform strides
             mDevice->free(mDevice, tmpBuffer);
             stride = 0;
@@ -103,9 +107,11 @@ Return<void> Gralloc0Allocator::allocate(const BufferDescriptor& descriptor,
 
     // free the buffers
     for (const auto& buffer : buffers) {
+        ALOGE("%s: ---->>>>> allocatedOn Free tmpstride mismatch -> stride:%d", __func__, stride);
         mDevice->free(mDevice, buffer.getNativeHandle());
     }
 
+ALOGE("%s: ---->>>>> END", __func__);
     return Void();
 }
 

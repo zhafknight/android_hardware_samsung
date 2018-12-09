@@ -16,7 +16,7 @@
 
 #undef LOG_TAG
 #define LOG_TAG "Gralloc1On0Adapter"
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 
 #include "Gralloc1On0Adapter.h"
 #include "gralloc1-adapter.h"

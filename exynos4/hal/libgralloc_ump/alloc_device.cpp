@@ -376,7 +376,7 @@ ALOGE("%s: GRALLOC_USAGE_HW_FIMC1 pHandle:%08x w:%d h:%d format:%d bpp:%d", __fu
 			pGraphicbufferCount++;
 			pGraphicbufferMemSize += size;
 
-                        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Creating graphicbuffer --- hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d size:%d Count:%d TotalSize:%d",
+                        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Creating graphicbuffer --- hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d size:%d Count:%d TotalSize:%d stride:%d",
                            __func__,
                            hnd,
                            hnd->ump_id,
@@ -385,7 +385,8 @@ ALOGE("%s: GRALLOC_USAGE_HW_FIMC1 pHandle:%08x w:%d h:%d format:%d bpp:%d", __fu
                            hnd->height,
                            size,
                            pGraphicbufferCount,
-                           pGraphicbufferMemSize);
+                           pGraphicbufferMemSize,
+                           hnd->stride);
                     }
 
                     return 0;
@@ -678,14 +679,14 @@ static int alloc_device_free(alloc_device_t* dev, buffer_handle_t handle)
     private_module_t* m = reinterpret_cast<private_module_t*>(dev->common.module);
 
     if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
-        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Blocked freeing graphicbuffer MEMORYLEAK! --- current =>  hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d",
+        ALOGE("%s: PRIV_FLAGS_GRAPHICBUFFER --- Freeing graphicbuffer --- current =>  hnd:0x%08x ump_id:%d ump_memhandle:0x%08x w:%d h:%d",
            __func__,
            hnd,
            hnd->ump_id,
            hnd->ump_mem_handle,
            hnd->width,
            hnd->height);
-       return 0;
+//       return 0;
     }
     pthread_mutex_lock(&l_surface);
 
