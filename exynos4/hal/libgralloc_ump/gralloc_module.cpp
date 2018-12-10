@@ -333,8 +333,23 @@ sd
     hnd->pid = getpid(); /* not in stock */
 
    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
-        hnd->ump_mem_handle = (int)ump_handle_create_from_secure_id(hnd->ump_id);
+        if ((hnd->blocked & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER)) {
+            ALOGE("%s: --->>>> PRIV_FLAGS_GRAPHICBUFFER SKIPPING BECAUSE IT IS BLOCKED ump_id:%d ump_mem_handle:%08x base:%08x", __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->base);
+            pthread_mutex_unlock(&s_map_lock);
+            return 0;
+        }
 
+        int newump_mem_handle = (int)ump_handle_create_from_secure_id(hnd->ump_id);
+/*
+        if ((newump_mem_handle == NULL) && (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER)) {
+            ALOGE("%s: --->>>> PRIV_FLAGS_GRAPHICBUFFER IGNORING ump_id:%d ump_mem_handle:%08x base:%08x", __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->base);
+            hnd->blocked = true;
+            pthread_mutex_unlock(&s_map_lock);
+            return 0;
+        }
+*/
+        hnd->ump_mem_handle = newump_mem_handle;
+  
         ALOGD_IF(debug_level > 0, "%s PRIV_FLAGS_USES_UMP hnd->ump_mem_handle=%d(%x)", __func__, hnd->ump_mem_handle, hnd->ump_mem_handle);
 
         if (UMP_INVALID_MEMORY_HANDLE != (ump_handle)hnd->ump_mem_handle) {
@@ -425,8 +440,8 @@ static int gralloc_unregister_buffer(gralloc_module_t const* module, buffer_hand
         return 0;
     }
 
-    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
-        ALOGE("%s: --->>>> PRIV_FLAGS_GRAPHICBUFFER ump_id:%d ump_mem_handle:%08x base:%08x", __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->base);
+    if (hnd->blocked && hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
+        ALOGE("%s: --->>>> PRIV_FLAGS_GRAPHICBUFFER BLOCKED!!!! ump_id:%d ump_mem_handle:%08x base:%08x", __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->base);
         hnd->base = 0;
         return 0;
     }
@@ -450,6 +465,11 @@ static int gralloc_unregister_buffer(gralloc_module_t const* module, buffer_hand
         hnd->ump_mem_handle = (int)UMP_INVALID_MEMORY_HANDLE;
         hnd->lockState  = 0;
         hnd->writeOwner = 0;
+       if (!hnd->blocked && hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
+           ALOGE("%s: --->>>> PRIV_FLAGS_GRAPHICBUFFER IS NOW BLOCKED!!!! ump_id:%d ump_mem_handle:%08x base:%08x", __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->base);
+           hnd->blocked = true;
+           return 0;
+       }
     } else if (hnd->flags & (private_handle_t::PRIV_FLAGS_USES_IOCTL | private_handle_t::PRIV_FLAGS_USES_HDMI)) {
         if(hnd->base == 0) {
             pthread_mutex_unlock(&s_map_lock);

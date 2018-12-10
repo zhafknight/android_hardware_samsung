@@ -388,7 +388,7 @@ ALOGE("%s: GRALLOC_USAGE_HW_FIMC1 pHandle:%08x w:%d h:%d format:%d bpp:%d", __fu
                            pGraphicbufferMemSize,
                            hnd->stride);
                     }
-
+                    hnd->blocked = false;
                     return 0;
                 } else {
                     ALOGE("%s failed to allocate handle", __func__);
