@@ -99,12 +99,6 @@ extern int get_bpp(int format);
 
 #define EXYNOS4_ALIGN( value, base ) (((value) + ((base) - 1)) & ~((base) - 1))
 
-static uint64_t next_backing_store_id()
-{
-    static std::atomic<uint64_t> next_id(1);
-    return next_id++;
-}
-
 int gralloc_alloc_fimc1(size_t size, int usage,
                         buffer_handle_t* pHandle, int w, int h,
                         int format, int bpp, int stride_raw, int stride) {
@@ -322,6 +316,10 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
 #endif
     }
 
+    if (usage & (GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_TEXTURE)) {
+        priv_alloc_flag = priv_alloc_flag | private_handle_t::PRIV_FLAGS_GRAPHICBUFFER;
+    }
+
     if (UMP_INVALID_MEMORY_HANDLE != ump_mem_handle) {
         cpu_ptr = ump_mapped_pointer_get(ump_mem_handle);
         if (NULL != cpu_ptr) {
@@ -347,7 +345,7 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
                     }
 #endif
 
-                    hnd->backing_store = next_backing_store_id();
+                    hnd->backing_store = ump_id;
                     hnd->format = format;
                     hnd->usage = usage;
                     hnd->width = w;
@@ -361,6 +359,10 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
                         hnd->ion_memory = ion_map(ion_fd, size, 0);
 
                     ALOGD_IF(debug_level > 0, "%s hnd->format=0x%x hnd->uoffset=%d hnd->voffset=%d hnd->paddr=%x hnd->bpp=%d", __func__, hnd->format, hnd->uoffset, hnd->voffset, hnd->paddr, hnd->bpp);
+                    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
+                        ALOGD_IF(debug_level > 0, "%s: GraphicBuffer (ump_id:%d): Allocating ump_mem_handle:%08x", __func__, ump_id, ump_mem_handle);
+                    }
+
                     return 0;
                 } else {
                     ALOGE("%s failed to allocate handle", __func__);
@@ -454,7 +456,7 @@ static int gralloc_alloc_framebuffer_locked(alloc_device_t* dev, size_t size, in
     hnd->width = w;
     hnd->height = h;
     hnd->bpp = bpp;
-    hnd->backing_store = next_backing_store_id();
+    hnd->backing_store = 0;
     hnd->paddr = l_paddr;
     hnd->stride = stride;
 
@@ -649,6 +651,9 @@ static int alloc_device_free(alloc_device_t* dev, buffer_handle_t handle)
     private_module_t* m = reinterpret_cast<private_module_t*>(dev->common.module);
 
     pthread_mutex_lock(&l_surface);
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
+        ALOGD_IF(debug_level > 0, "%s: GraphicBuffer (ump_id:%d): Freeing ump_mem_handle:%08x", __func__, hnd->ump_id, hnd->ump_mem_handle);
+    }
 
     if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER) {
         /* free this buffer */
