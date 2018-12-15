@@ -28,7 +28,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -277,7 +277,7 @@ static int gralloc_register_buffer(gralloc_module_t const* module, buffer_handle
     /* if this handle was created in this process, then we keep it as is. */
     private_handle_t* hnd = (private_handle_t*)handle;
 
-    ALOGD_IF(debug_level > 0, "%s flags=%x", __func__, hnd->flags);
+    ALOGD_IF(debug_level > 0, "ump_id:%d %s flags=%x", hnd->ump_id, __func__, hnd->flags);
 
 #ifdef USE_PARTIAL_FLUSH
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
@@ -323,9 +323,10 @@ sd
     hnd->pid = getpid(); /* not in stock */
 
    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
+        ALOGV("ump_id:%d %s PRIV_FLAGS_USES_UMP hnd->ump_mem_handle=(0x%x) hnd->usage=(0x%x) ump_id:%d", hnd->ump_id, __func__, hnd->ump_mem_handle, hnd->usage, hnd->ump_id);
         hnd->ump_mem_handle = (int)ump_handle_create_from_secure_id(hnd->ump_id);
 
-        ALOGD_IF(debug_level > 0, "%s PRIV_FLAGS_USES_UMP hnd->ump_mem_handle=%d(%x)", __func__, hnd->ump_mem_handle, hnd->ump_mem_handle);
+        ALOGV("ump_id:%d %s PRIV_FLAGS_USES_UMP hnd->ump_mem_handle=(0x%x) hnd->usage=(0x%x) ump_id:%d", hnd->ump_id, __func__, hnd->ump_mem_handle, hnd->usage, hnd->ump_id);
 
         if (UMP_INVALID_MEMORY_HANDLE != (ump_handle)hnd->ump_mem_handle) {
             hnd->base = (int)ump_mapped_pointer_get((ump_handle)hnd->ump_mem_handle);
@@ -398,6 +399,11 @@ sd
         ALOGE("%s registering non-UMP buffer not supported", __func__);
     }
 
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
+        ALOGD_IF(debug_level > 0, "ump_id:%d %s: GraphicBuffer (ump_id:%d): ump_mem_handle:%08x (ump_reference_release)", hnd->ump_id, __func__, hnd->ump_id, hnd->ump_mem_handle);
+        ump_reference_release((ump_handle)hnd->ump_mem_handle);
+    }
+
     pthread_mutex_unlock(&s_map_lock);
     return retval;
 }
@@ -418,7 +424,7 @@ static int gralloc_unregister_buffer(gralloc_module_t const* module, buffer_hand
 #ifdef USE_PARTIAL_FLUSH
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP)
         if (!release_rect((int)hnd->ump_id))
-            ALOGE("%s secureID: 0x%x, release error", __func__, (int)hnd->ump_id);
+            ALOGE("ump_id:%d %s secureID: 0x%x, release error", (int)hnd->ump_id, __func__, (int)hnd->ump_id);
 #endif
     ALOGE_IF(hnd->lockState & private_handle_t::LOCK_STATE_READ_MASK,
             "%s [unregister] handle %p still locked (state=%08x)", __func__, hnd, hnd->lockState);
@@ -481,11 +487,11 @@ static int gralloc_lock(gralloc_module_t const* module __unused, buffer_handle_t
 
     private_handle_t* hnd = (private_handle_t*)handle;
 
-    ALOGD_IF(debug_level > 0, "%s hnd->flags=0x%x usage=0x%x l=%d t=%d w=%d h=%d", __func__, hnd->flags, usage, l, t, w, h);
+    ALOGD_IF(debug_level > 0, "ump_id:%d %s hnd->flags=0x%x usage=0x%x l=%d t=%d w=%d h=%d", hnd->ump_id, __func__, hnd->flags, usage, l, t, w, h);
 
 #ifdef SAMSUNG_EXYNOS_CACHE_UMP
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
-        ALOGD_IF(debug_level > 0, "%s private_handle_t::PRIV_FLAGS_USES_UMP hnd->ump_id=%d ", __func__, hnd->ump_id);
+        ALOGD_IF(debug_level > 0, "ump_id:%d %s private_handle_t::PRIV_FLAGS_USES_UMP hnd->ump_id=%d ", hnd->ump_id, __func__, hnd->ump_id);
 
 #ifdef USE_PARTIAL_FLUSH
         private_handle_rect *psRect;
@@ -537,7 +543,7 @@ static int gralloc_unlock(gralloc_module_t const* module, buffer_handle_t handle
 
     private_handle_t* hnd = (private_handle_t*)handle;
 
-    ALOGD_IF(debug_level > 0, "%s hnd->flags=%x", __func__, hnd->flags);
+    ALOGD_IF(debug_level > 0, "ump_id%d %s hnd->flags=%x", hnd->ump_id, __func__, hnd->flags);
 
 #ifdef SAMSUNG_EXYNOS_CACHE_UMP
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {

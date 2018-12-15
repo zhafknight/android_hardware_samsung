@@ -291,12 +291,19 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
         return gralloc_alloc_fimc1(size, usage, pHandle, w, h, format, bpp, stride_raw, stride);
     }
 
+    
     ret = -1;
     if (usage & (GRALLOC_USAGE_HW_COMPOSER | GRALLOC_USAGE_HW_ION)) {
+        ALOGV("%s: Allocating for HWC via ION...", __func__);
         // the handle is guaranteed to have this usage flag set
         // if it is going to be used as an HWC layer (see hwcomposer.h in hardware/libhardware)
         ret = gralloc_alloc_ion(dev, size, usage, format, &ion_fd, &ion_paddr, &priv_alloc_flag, &ump_mem_handle);
+    } else if ((usage & GRALLOC_USAGE_HW_RENDER) || (usage & GRALLOC_USAGE_HW_TEXTURE)) {
+        ALOGV("%s: Allocating graphicbuffer via ION...", __func__);
+        priv_alloc_flag = priv_alloc_flag | private_handle_t::PRIV_FLAGS_GRAPHICBUFFER;
+        ret = gralloc_alloc_ion(dev, size, usage, format, &ion_fd, &ion_paddr, &priv_alloc_flag, &ump_mem_handle);
     }
+
     if (ret < 0) {
         // may happen if ion carveout is out of memory, or if the
         // handle is not needed for HWC
@@ -314,10 +321,6 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
 #else
         ump_mem_handle = ump_ref_drv_allocate(size, UMP_REF_DRV_CONSTRAINT_NONE);
 #endif
-    }
-
-    if (usage & (GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_TEXTURE)) {
-        priv_alloc_flag = priv_alloc_flag | private_handle_t::PRIV_FLAGS_GRAPHICBUFFER;
     }
 
     if (UMP_INVALID_MEMORY_HANDLE != ump_mem_handle) {
@@ -358,9 +361,10 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
                     if (ion_fd >= 0)
                         hnd->ion_memory = ion_map(ion_fd, size, 0);
 
-                    ALOGD_IF(debug_level > 0, "%s hnd->format=0x%x hnd->uoffset=%d hnd->voffset=%d hnd->paddr=%x hnd->bpp=%d", __func__, hnd->format, hnd->uoffset, hnd->voffset, hnd->paddr, hnd->bpp);
+                    ALOGD_IF(debug_level > 0, "ump_id:%d %s hnd->usage=0x%x hnd->format=0x%x hnd->uoffset=%d hnd->voffset=%d hnd->paddr=%x hnd->bpp=%d ump_mem_handle:%08x", hnd->ump_id, __func__, hnd->usage, hnd->format, hnd->uoffset, hnd->voffset, hnd->paddr, hnd->bpp, ump_mem_handle);
                     if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
-                        ALOGD_IF(debug_level > 0, "%s: GraphicBuffer (ump_id:%d): Allocating ump_mem_handle:%08x", __func__, ump_id, ump_mem_handle);
+                        ALOGD_IF(debug_level > 0, "ump_id:%d %s: GraphicBuffer (ump_id:%d): Allocating ump_mem_handle:%08x (ump_reference_add)", ump_id, __func__, ump_id, ump_mem_handle);
+                        ump_reference_add(ump_mem_handle);
                     }
 
                     return 0;
@@ -664,7 +668,7 @@ static int alloc_device_free(alloc_device_t* dev, buffer_handle_t handle)
         close(hnd->fd);
 
     } else if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
-        ALOGD_IF(debug_level > 0, "%s hnd->ump_mem_handle=%d hnd->ump_id=%d", __func__, hnd->ump_mem_handle, hnd->ump_id);
+        ALOGD_IF(debug_level > 0, "%s hnd->ump_mem_handle:%08x hnd->ump_id=%d", __func__, hnd->ump_mem_handle, hnd->ump_id);
 
 #ifdef USE_PARTIAL_FLUSH
         if (!release_rect((int)hnd->ump_id))
