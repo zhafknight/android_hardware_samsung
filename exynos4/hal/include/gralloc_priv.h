@@ -47,7 +47,7 @@
 #define HWC_HWOVERLAY 1
 
 #define GRALLOC_ARM_UMP_MODULE 1
-#define debug_level 1
+#define debug_level 0
 
 static int gMemfd = 0;
 
