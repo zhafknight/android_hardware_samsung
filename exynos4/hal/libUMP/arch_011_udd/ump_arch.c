@@ -20,7 +20,6 @@
  * UMP arch layer for UMP-UDD
  */
 
-
 #include "ump.h"
 #include "ump_arch.h"
 #include <ump/ump_debug.h>

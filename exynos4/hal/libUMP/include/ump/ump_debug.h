@@ -56,7 +56,7 @@
 #endif /* UMP_PRINT_FLUSH */
 
 #ifndef UMP_DEBUG_LEVEL
-    #define UMP_DEBUG_LEVEL 10
+    #define UMP_DEBUG_LEVEL 1
 #endif /* UMP_DEBUG_LEVEL */
 
 #ifndef UMP_DEBUG_ERROR_START_MSG
