@@ -325,8 +325,6 @@ sd
    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
         hnd->ump_mem_handle = (int)ump_handle_create_from_secure_id(hnd->ump_id);
 
-        ALOGD_IF(debug_level > 0, "%s PRIV_FLAGS_USES_UMP hnd->ump_mem_handle=%d(%x)", __func__, hnd->ump_mem_handle, hnd->ump_mem_handle);
-
         if (UMP_INVALID_MEMORY_HANDLE != (ump_handle)hnd->ump_mem_handle) {
             hnd->base = (int)ump_mapped_pointer_get((ump_handle)hnd->ump_mem_handle);
             if (0 != hnd->base) {
@@ -396,6 +394,11 @@ sd
 
     }  else {
         ALOGE("%s registering non-UMP buffer not supported", __func__);
+    }
+
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_GRAPHICBUFFER) {
+        ALOGD_IF(debug_level > 0, "ump_id:%d %s: GraphicBuffer (ump_id:%d): ump_mem_handle:%08x (ump_reference_release)", hnd->ump_id, __func__, hnd->ump_id, hnd->ump_mem_handle);
+        ump_reference_release((ump_handle)hnd->ump_mem_handle);
     }
 
     pthread_mutex_unlock(&s_map_lock);
