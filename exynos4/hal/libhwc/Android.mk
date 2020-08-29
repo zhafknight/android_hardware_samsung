@@ -26,10 +26,6 @@ LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_SHARED_LIBRARIES := liblog libEGL libcutils libhardware libutils libsync libfimg
 
-ifeq ($(TARGET_BOOTLOADER_BOARD_NAME),smdk4210)
-    LOCAL_CFLAGS += -DNO_FIMG
-endif
-
 LOCAL_SRC_FILES := hwcomposer.cpp \
                    hwcomposer_vsync.cpp \
                    window.cpp \
