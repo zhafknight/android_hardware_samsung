@@ -841,7 +841,7 @@ static int perform_fimc(hwc_context_t *ctx, const hwc_layer_1_t &layer, struct h
     //src
     hwc_rect_t crop = integerizeSourceCrop(layer.sourceCropf);
 
-    ret = v4l2_s_fmt_pix_out(ctx, EXYNOS4_ALIGN(src_handle->width, 16), EXYNOS4_ALIGN(src_handle->height, 16), HAL_PIXEL_FORMAT_2_V4L2_PIX(src_handle->format), 0);
+    ret = v4l2_s_fmt_pix_out(ctx, src_handle->width, src_handle->height, HAL_PIXEL_FORMAT_2_V4L2_PIX(src_handle->format), 0);
     if (ret < 0) {
         ALOGE("%s: v4l2_s_fmt_pix_out() rc=%d", __FUNCTION__, ret);
         return ret;
@@ -892,10 +892,10 @@ static int perform_fimc(hwc_context_t *ctx, const hwc_layer_1_t &layer, struct h
 
     if (rotate == 90 || rotate == 270) {
         w = HEIGHT(layer.displayFrame);
-        h = EXYNOS4_ALIGN(WIDTH(layer.displayFrame), 16);
+        h = WIDTH(layer.displayFrame);
     } else {
         w = WIDTH(layer.displayFrame);
-        h = EXYNOS4_ALIGN(HEIGHT(layer.displayFrame), 16);
+        h = HEIGHT(layer.displayFrame);
     }
 
     ret = v4l2_s_fbuf(ctx, (void *)dst_addr, w, h, V4L2_PIX_FMT_RGB32);
@@ -1087,7 +1087,7 @@ static int post_fimd(hwc_context_t *ctx, hwc_display_contents_1_t* contents)
                     private_handle_t* dst_hnd = private_handle_t::dynamicCast(win.dst_buf[win.current_buf]);
                     config[window].phys_addr = dst_hnd->paddr;
                     config[window].offset = 0;
-                    config[window].stride = EXYNOS4_ALIGN(config[window].w,16) * 4;
+                    config[window].stride = config[window].w * 4;
                 }
                 break;
             case gsc_map_t::NONE:
