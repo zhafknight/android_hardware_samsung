@@ -147,8 +147,11 @@ static bool is_scaled(const hwc_layer_1_t &layer)
            HEIGHT(layer.displayFrame) != HEIGHT(crop);
 }
 
-static bool supports_fimg(const hwc_layer_1_t &layer)
+static bool supports_fimg(struct hwc_context_t *ctx, const hwc_layer_1_t &layer, size_t i)
 {
+    if (ctx->fixed_fimg_layer > -1 && i != ctx->fixed_fimg_layer)
+       return false;
+
     private_handle_t *handle = private_handle_t::dynamicCast(layer.handle);
 
     int max_w = 8000; //taken from kernel: drivers/media/video/samsung/fimg2d4x-exynos4/fimg2d_ctx.c
@@ -159,8 +162,11 @@ static bool supports_fimg(const hwc_layer_1_t &layer)
            handle->height <= max_h;
 }
 
-static bool supports_fimc(const hwc_layer_1_t &layer)
+static bool supports_fimc(struct hwc_context_t *ctx, const hwc_layer_1_t &layer, size_t i)
 {
+    if (ctx->fixed_fimc_layer > -1 && i != ctx->fixed_fimc_layer)
+       return false;
+
     private_handle_t *handle = private_handle_t::dynamicCast(layer.handle);
 
 /* TODO: look in kernel for min/max size */
@@ -206,10 +212,28 @@ static enum gsc_map_t::mode layer_requires_process(hwc_layer_1_t &layer)
 
     mode = format_requires_process(handle->format);
 
-    if (mode == gsc_map_t::NONE) {
-        if ((is_scaled(layer) || is_transformed(layer)) && is_contiguous(layer)) { // TODO: can FIMC handle non-x aligned buffers?
+    switch(mode) {
+    case gsc_map_t::NONE:
+        if (!is_scaled(layer) && is_transformed(layer) && is_contiguous(layer)) { // TODO: can FIMC handle non-x aligned buffers?
             mode = gsc_map_t::FIMC;
+        } else if (is_scaled(layer) || is_transformed(layer) || !is_x_aligned(layer) || !is_contiguous(layer)) {
+            ALOGV("%s: direct render -> fimg because is_scaled(%d) is_transformed(%d) is_x_aligned(%d)",
+                    __FUNCTION__, is_scaled(layer), is_transformed(layer), is_x_aligned(layer));
+            mode = gsc_map_t::FIMG;
         }
+        break;
+
+    case gsc_map_t::FIMC:
+        if (is_scaled(layer)) {
+            // FIMC _should_ be able to do scaling
+            // but it doesn't seem to work well.
+            // Disable it for now.
+            mode = gsc_map_t::NONE;
+        }
+        break;
+
+    default:
+        break;
     }
 
     return mode;
@@ -270,14 +294,14 @@ bool is_overlay_supported(struct hwc_context_t *ctx, hwc_layer_1_t &layer, size_
 
     switch (mode) {
     case gsc_map_t::FIMG:
-        if (!supports_fimg(layer)) {
+        if (!supports_fimg(ctx, layer, i)) {
             ALOGW("\tlayer %u: FIMG required but not supported", i);
             return false;
         }
         break;
 
     case gsc_map_t::FIMC:
-        if (!supports_fimc(layer)) {
+        if (!supports_fimc(ctx, layer, i)) {
             ALOGW("\tlayer %u: FIMG required but not supported", i);
             return false;
         }
@@ -1384,7 +1408,9 @@ static void hwc_dump(struct hwc_composer_device_1* dev, char *buff, int buff_len
 
     ctx->force_gpu = property_get_int32("debug.hwc.force_gpu", 0);
     ctx->disable_fimc = property_get_int32("debug.hwc.disable_fimc", 0);
+    ctx->fixed_fimc_layer = property_get_int32("debug.hwc.fixed_fimc_layer", -1);
     ctx->disable_fimg = property_get_int32("debug.hwc.disable_fimg", 0);
+    ctx->fixed_fimg_layer = property_get_int32("debug.hwc.fixed_fimg_layer", -1);
     ctx->multi_fimg = property_get_int32("persist.sys.hwc.multi_fimg", 0);
 
     strlcpy(buff, tmp.string(), buff_len);
@@ -1454,8 +1480,14 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         property_get("debug.hwc.disable_fimc", value, "0");
         dev->disable_fimc = atoi(value);
 
+        property_get("debug.hwc.fixed_fimc_layer", value, "-1");
+        dev->fixed_fimc_layer = atoi(value);
+
         property_get("debug.hwc.disable_fimg", value, "0");
         dev->disable_fimg = atoi(value);
+
+        property_get("debug.hwc.fixed_fimg_layer", value, "-1");
+        dev->fixed_fimg_layer = atoi(value);
 
         // Init Vsync
         init_vsync_thread(dev);

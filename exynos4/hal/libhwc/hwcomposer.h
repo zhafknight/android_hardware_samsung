@@ -139,6 +139,8 @@ struct hwc_context_t {
     int                       bypass_count;
     bool                      disable_fimc;
     bool                      disable_fimg;
+    bool                      fixed_fimc_layer;
+    bool                      fixed_fimg_layer;
 
     struct hwc_win_info_t     win[NUM_HW_WINDOWS];
 
