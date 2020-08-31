@@ -469,13 +469,10 @@ void determineBandwidthSupport(hwc_context_t *ctx, hwc_display_contents_1_t *con
         }
 
         changed = false;
-#ifdef NO_FIMG
-        // disable HW composition using FIMG
-        fimg_used = true;
-#else
-        fimg_used = false;
-#endif
-        fimc_used = false;
+        // Control HW composition
+        fimc_used = ctx->disable_fimc;
+        fimg_used = ctx->disable_fimg;
+
         yuv_layer = -1;
         rgb_over_yuv_layer = 0;
 
@@ -611,7 +608,7 @@ void assignWindows(hwc_context_t *ctx, hwc_display_contents_1_t *contents)
 {
     unsigned int nextWindow = 0;
     enum gsc_map_t::mode mode;
-    bool fimc_used = false;
+    bool fimc_used = ctx->disable_fimc;
     for (size_t i = 0; i < contents->numHwLayers; i++) {
         hwc_layer_1_t &layer = contents->hwLayers[i];
 
@@ -1042,7 +1039,7 @@ static int post_fimd(hwc_context_t *ctx, hwc_display_contents_1_t* contents)
 
             switch(win.gsc.mode) {
             case gsc_map_t::FIMG:
-                ALOGV("%s: layer %d perform FIMG operation", __FUNCTION__, i);
+                ALOGD("%s: layer %d perform FIMG operation", __FUNCTION__, i);
                 err = perform_fimg(ctx, layer, win, HAL_PIXEL_FORMAT_BGRA_8888);
                 if (err < 0) {
                     ALOGE("failed to perform FIMG for layer %u", i);
@@ -1064,7 +1061,7 @@ static int post_fimd(hwc_context_t *ctx, hwc_display_contents_1_t* contents)
                 break;
 
             case gsc_map_t::FIMC:
-                ALOGV("%s: layer %d perform FIMC operation", __FUNCTION__, i);
+                ALOGD("%s: layer %d perform FIMC operation", __FUNCTION__, i);
                 err = perform_fimc(ctx, layer, win);
                 if (err < 0) {
                     ALOGE("failed to perform FIMC for layer %u", i);
@@ -1447,6 +1444,8 @@ static void hwc_dump(struct hwc_composer_device_1* dev, char *buff, int buff_len
                 cfg->phys_addr, cfg->offset, cfg->stride, cfg->format, cfg->blending, cfg->plane_alpha);
     }
 
+    ctx->disable_fimc = property_get_int32("debug.hwc.disable_fimc", 0);
+    ctx->disable_fimg = property_get_int32("debug.hwc.disable_fimg", 0);
     ctx->multi_fimg = property_get_int32("persist.sys.hwc.multi_fimg", 0);
 
     ctx->use_new_composition_decision = property_get_int32("debug.hwc.use_new_composition_decision", 0);
@@ -1521,6 +1520,13 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
 
         property_get("debug.hwc.use_new_composition_decision", value, "0");
         dev->use_new_composition_decision = atoi(value);
+
+        property_get("debug.hwc.disable_fimc", value, "0");
+        dev->disable_fimc = atoi(value);
+
+        property_get("debug.hwc.disable_fimg", value, "0");
+        dev->disable_fimg = atoi(value);
+
         dev->is_overlay_supported = is_overlay_supported;
         if (dev->use_new_composition_decision)
             dev->is_overlay_supported = is_overlay_supported_new;
