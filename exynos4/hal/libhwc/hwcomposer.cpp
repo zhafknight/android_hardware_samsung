@@ -477,7 +477,7 @@ void determineBandwidthSupport(hwc_context_t *ctx, hwc_display_contents_1_t *con
             }
 
             int modes = layer_requires_process(layer);
-            if ((fimg_count == 0 || ctx->multi_fimg) && (modes & (1 << gsc_map_t::FIMG))) {
+            if (ctx->enable_fimg && (fimg_count == 0 || ctx->multi_fimg) && (modes & (1 << gsc_map_t::FIMG))) {
                  fimg_count++;
                  can_compose = true;
             } else if ((fimc_count == 0) && modes & (1 << gsc_map_t::FIMC)) {
@@ -551,7 +551,7 @@ void assignWindows(hwc_context_t *ctx, hwc_display_contents_1_t *contents)
                 layer.hints = HWC_HINT_CLEAR_FB;
 
                 modes = layer_requires_process(layer);
-                if ((fimg_count == 0 || ctx->multi_fimg) && (modes & (1 << gsc_map_t::FIMG))) {
+                if (ctx->enable_fimg && (fimg_count == 0 || ctx->multi_fimg) && (modes & (1 << gsc_map_t::FIMG))) {
                     fimg_count++;
                     ctx->win[nextWindow].gsc.mode = gsc_map_t::FIMG;
                 } else if ((fimc_count == 0) && modes & (1 << gsc_map_t::FIMC)) {
@@ -1321,8 +1321,8 @@ static void hwc_dump(struct hwc_composer_device_1* dev, char *buff, int buff_len
 
     struct hwc_context_t *ctx = (hwc_context_t *)dev;
     android::String8 tmp("");
-    tmp.appendFormat("Exynos HWC: force_fb=%d force_gpu=%d bypass_count=%d multi_fimg=%d\n", ctx->force_fb, ctx->force_gpu,
-            ctx->bypass_count, ctx->multi_fimg);
+    tmp.appendFormat("Exynos HWC: force_fb=%d force_gpu=%d bypass_count=%d multi_fimg=%d enable_fimg=%d\n", ctx->force_fb, ctx->force_gpu,
+            ctx->bypass_count, ctx->multi_fimg, ctx->enable_fimc);
     tmp.appendFormat("win | mode | layer_index |    paddr    |     hnd     | alpha |\n");
     //                3-- | 4--- | 11--------- | 0x100000000 | 0x100000000 |  255  |
     int fimc_win = -1;
@@ -1356,6 +1356,7 @@ static void hwc_dump(struct hwc_composer_device_1* dev, char *buff, int buff_len
                 cfg->phys_addr, cfg->offset, cfg->stride, cfg->format, cfg->blending, cfg->plane_alpha);
     }
 
+    ctx->enable_fimg = property_get_int32("persist.sys.hwc.enable_fimg", 0);
     ctx->multi_fimg = property_get_int32("persist.sys.hwc.multi_fimg", 0);
 
     ctx->use_new_composition_decision = property_get_int32("debug.hwc.use_new_composition_decision", 0);
@@ -1424,6 +1425,9 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         char value[PROPERTY_VALUE_MAX];
         property_get("debug.hwc.force_gpu", value, "0");
         dev->force_gpu = atoi(value);
+
+        property_get("persist.sys.hwc.enable_fimg", value, "0");
+        dev->enable_fimg = atoi(value);
 
         property_get("persist.sys.hwc.multi_fimg", value, "0");
         dev->multi_fimg = atoi(value);

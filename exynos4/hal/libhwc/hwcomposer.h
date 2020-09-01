@@ -135,6 +135,7 @@ struct hwc_context_t {
 
     bool                      force_gpu; //value coming from settings
     bool                      force_fb;
+    bool                      enable_fimg; // enable fimg
     bool                      multi_fimg; // enable multiple fimg layers
     int                       bypass_count;
     bool                      use_new_composition_decision;
