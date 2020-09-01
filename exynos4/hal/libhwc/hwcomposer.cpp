@@ -114,21 +114,6 @@ static bool format_is_supported_by_fimc(int format)
     return (HAL_PIXEL_FORMAT_2_V4L2_PIX(format) > 0);
 }
 
-static enum gsc_map_t::mode format_requires_process(int format)
-{
-    switch (format) {
-    case HAL_PIXEL_FORMAT_RGBA_8888: //format is supported by fimd so there's no need to check
-    case HAL_PIXEL_FORMAT_RGBX_8888:
-        return gsc_map_t::NONE;
-
-    default:
-        if (is_yuv_format(format))
-            return gsc_map_t::FIMC;
-        else
-            return gsc_map_t::NONE;
-    }
-}
-
 static bool is_transformed(const hwc_layer_1_t &layer)
 {
     return layer.transform != 0;
@@ -150,13 +135,13 @@ static bool is_scaled(const hwc_layer_1_t &layer)
 static bool supports_fimg(const hwc_layer_1_t &layer)
 {
     private_handle_t *handle = private_handle_t::dynamicCast(layer.handle);
+    int w = WIDTH(layer.displayFrame);
+    int h = HEIGHT(layer.displayFrame);
+    bool result = format_is_supported_by_fimg(handle->format) && (w <= 36 || h <= 36);
 
-    int max_w = 8000; //taken from kernel: drivers/media/video/samsung/fimg2d4x-exynos4/fimg2d_ctx.c
-    int max_h = 8000; //fimg2d_check_params()
+    ALOGE("%s: supported: %d width/height %dx%d, displayframe: %dx%d", __func__, result, handle->width, handle->height, w, h);
 
-    return format_is_supported_by_fimg(handle->format) &&
-           handle->stride <= max_w &&
-           handle->height <= max_h;
+    return result;
 }
 
 static bool supports_fimc(const hwc_layer_1_t &layer)
@@ -199,20 +184,19 @@ static bool is_contiguous(const hwc_layer_1_t &layer)
     return false;
 }
 
-static enum gsc_map_t::mode layer_requires_process(hwc_layer_1_t &layer)
+static int layer_requires_process(hwc_layer_1_t &layer)
 {
     private_handle_t *handle = private_handle_t::dynamicCast(layer.handle);
-    enum gsc_map_t::mode mode;
 
-    mode = format_requires_process(handle->format);
+    int result = 0;
 
-   if (mode == gsc_map_t::NONE) {
-        if ((is_scaled(layer) || is_transformed(layer)) && is_contiguous(layer)) { // TODO: can FIMC handle non-x aligned buffers?
-            mode = gsc_map_t::FIMC;
-        }
-    }
+    if (supports_fimg(layer))
+       result = result | 1 << gsc_map_t::FIMG;
 
-    return mode;
+    if (supports_fimc(layer))
+       result = result | 1 << gsc_map_t::FIMC;
+
+    return result;
 }
 
 size_t visible_width(struct hwc_context_t *ctx, hwc_layer_1_t &layer)
@@ -308,7 +292,7 @@ bool is_overlay_supported(struct hwc_context_t *ctx, hwc_layer_1_t &layer, size_
 
 bool is_overlay_supported_new(struct hwc_context_t *ctx, hwc_layer_1_t &layer, size_t i)
 {
-    enum gsc_map_t::mode mode;
+    int modes;
 
     if (layer.flags & HWC_SKIP_LAYER) {
         ALOGV("\tlayer %u: skipping", i);
@@ -327,31 +311,14 @@ bool is_overlay_supported_new(struct hwc_context_t *ctx, hwc_layer_1_t &layer, s
         return false;
     }
 
-    mode = layer_requires_process(layer);
-    ALOGV("%s layer_requires_process() mode=%d", __FUNCTION__, (int) mode);
+    modes = layer_requires_process(layer);
 
-    switch (mode) {
-    case gsc_map_t::FIMG:
-        if (!supports_fimg(layer)) {
-            ALOGW("\tlayer %u: FIMG required but not supported", i);
-            return false;
-        }
-        break;
+    bool fimc_supported = modes & 1 << gsc_map_t::FIMC;
+    bool fimg_supported = modes & 1 << gsc_map_t::FIMG;
+    ALOGD("%s: Overlays supported: fimc:%d fimg:%d", __FUNCTION__, fimc_supported, fimg_supported);
 
-    case gsc_map_t::FIMC:
-        if (!supports_fimc(layer)) {
-            ALOGW("\tlayer %u: FIMG required but not supported", i);
-            return false;
-        }
-        break;
-
-    default:
-        if (!format_is_supported(handle->format) || is_transformed(layer) || is_scaled(layer) || !is_contiguous(layer)
-				|| !is_x_aligned(layer)) {
-            ALOGW("\tlayer %u: pixel format %u not supported", i, handle->format);
-            return false;
-        }
-    }
+    if (!modes)
+       return false;
 
     if (visible_width(ctx, layer) < BURSTLEN_BYTES) {
         ALOGW("\tlayer %u: visible area is too narrow", i);
@@ -452,10 +419,10 @@ void determineBandwidthSupport(hwc_context_t *ctx, hwc_display_contents_1_t *con
     // necessary because adding a layer to the framebuffer can cause other
     // windows to retroactively violate constraints.)
     bool changed;
-    bool fimg_used;
-    bool fimc_used;
     int yuv_layer; //which layer has yuv content
     int rgb_over_yuv_layer; //number of rgb layers over a yuv layer
+    int fimc_count = 0;
+    int fimg_count = 0;
 
     do {
         size_t pixels_left, windows_left;
@@ -469,13 +436,6 @@ void determineBandwidthSupport(hwc_context_t *ctx, hwc_display_contents_1_t *con
         }
 
         changed = false;
-#ifdef NO_FIMG
-        // disable HW composition using FIMG
-        fimg_used = true;
-#else
-        fimg_used = false;
-#endif
-        fimc_used = false;
         yuv_layer = -1;
         rgb_over_yuv_layer = 0;
 
@@ -509,66 +469,23 @@ void determineBandwidthSupport(hwc_context_t *ctx, hwc_display_contents_1_t *con
             bool can_compose = true;
             bool gsc_required = false;
 
-            do {
-                can_compose = windows_left && pixels_needed <= pixels_left;
-                if (!can_compose) {
-                    ALOGV("%s: can't compose layer %d, %s, pixels_needed(%d) pixels_left(%d)", 
-                            __FUNCTION__, i, windows_left ? "no more pixels left" : "no more windows left", pixels_needed, pixels_left);
-                    break;
-                }
+            can_compose = windows_left && pixels_needed <= pixels_left;
+            if (!can_compose) {
+                ALOGE("%s: can't compose layer %d, %s, pixels_needed(%d) pixels_left(%d)",
+                        __FUNCTION__, i, windows_left ? "no more pixels left" : "no more windows left", pixels_needed, pixels_left);
+                break;
+            }
 
-                enum gsc_map_t::mode mode = layer_requires_process(layer);
-                private_handle_t *handle = private_handle_t::dynamicCast(layer.handle);
-
-                switch (mode) {
-                    case gsc_map_t::FIMC:
-                        ALOGV("%s: layer %u: mode=FIMC", __FUNCTION__, i);
-                        can_compose = can_compose && !fimc_used;
-                        fimc_used = true;
-                        if (!can_compose && format_is_supported_by_fimg(handle->format)) {
-                            can_compose = true;
-                            // fall through to FIMG
-                            mode = gsc_map_t::FIMG;
-                        } else {
-                            yuv_layer = i;
-                            break;
-                        }
-
-                    case gsc_map_t::FIMG:
-                        ALOGV("%s: layer %u: mode=FIMG can_compose(%d) fimg_used(%d)", __FUNCTION__, i, can_compose, fimg_used);
-
-                        if (yuv_layer >= 0 && i > yuv_layer) {
-                            ++rgb_over_yuv_layer;
-
-                            if (rgb_over_yuv_layer > 1) {
-                                ALOGV("%s: layer %u can't be composed, since there are too much rgb layers over a yuv one", __FUNCTION__, i);
-                                can_compose = false;
-                            }
-                        }
-
-                        if (can_compose) {
-#ifndef NO_FIMG
-                            if (!ctx->multi_fimg)
-#endif
-                                can_compose = can_compose && !fimg_used;
-                            fimg_used = true;
-                        }
-
-                        break;
-
-
-                    default:
-                        ALOGV("%s: layer %u: mode=%d", __FUNCTION__, i, mode);
-                        can_compose = true;
-                        break;
-                };
-
-                if (!can_compose) {
-                    ALOGV("%s: can't compose layer %d, mode(%d)", __FUNCTION__, i, (int) mode);
-                }
-
-                break; //we only want to perform the "can_compose" check once
-            } while (1);
+            int modes = layer_requires_process(layer);
+            if ((fimg_count == 0 || ctx->multi_fimg) && (modes & (1 << gsc_map_t::FIMG))) {
+                 fimg_count++;
+                 can_compose = true;
+            } else if ((fimc_count == 0) && modes & (1 << gsc_map_t::FIMC)) {
+                 fimc_count++;
+                 can_compose = true;
+            } else {
+                can_compose = false;
+            }
 
             if (!can_compose) {
                 layer.compositionType = HWC_FRAMEBUFFER;
@@ -610,8 +527,9 @@ void determineBandwidthSupport(hwc_context_t *ctx, hwc_display_contents_1_t *con
 void assignWindows(hwc_context_t *ctx, hwc_display_contents_1_t *contents)
 {
     unsigned int nextWindow = 0;
-    enum gsc_map_t::mode mode;
-    bool fimc_used = false;
+    int modes;
+    int fimg_count = 0;
+    int fimc_count = 0;
     for (size_t i = 0; i < contents->numHwLayers; i++) {
         hwc_layer_1_t &layer = contents->hwLayers[i];
 
@@ -632,42 +550,32 @@ void assignWindows(hwc_context_t *ctx, hwc_display_contents_1_t *contents)
                 ctx->win[nextWindow].src_buf = handle;
                 layer.hints = HWC_HINT_CLEAR_FB;
 
-                mode = layer_requires_process(layer);
+                modes = layer_requires_process(layer);
+                if ((fimg_count == 0 || ctx->multi_fimg) && (modes & (1 << gsc_map_t::FIMG))) {
+                    fimg_count++;
+                    ctx->win[nextWindow].gsc.mode = gsc_map_t::FIMG;
+                } else if ((fimc_count == 0) && modes & (1 << gsc_map_t::FIMC)) {
+                    fimc_count++;
+                    ctx->win[nextWindow].gsc.mode = gsc_map_t::FIMC;
+                }
+                ALOGD("%s: \tlayer(%d) using FIM%c for format(%d)", __func__, i, (ctx->win[nextWindow].gsc.mode == gsc_map_t::FIMG)?'G':'C', handle->format);
 
-                switch (mode) {
-                case gsc_map_t::FIMG:
-                case gsc_map_t::FIMC:
-                    if (mode == gsc_map_t::FIMC) {
-                        if (fimc_used)
-                            mode = gsc_map_t::FIMG;
-                        else fimc_used = true;
-                    }
-                    ALOGV("\tlayer(%d) using FIM%c for format(%d)", i, (mode == gsc_map_t::FIMG)?'G':'C', handle->format);
-                    ctx->win[nextWindow].gsc.mode = mode;
+                //Should ION memory for FIMC/FIMG operation be re-/allocated?
+                if ((WIDTH(layer.displayFrame) != ctx->win[nextWindow].rect_info.w) ||
+                    (HEIGHT(layer.displayFrame) != ctx->win[nextWindow].rect_info.h)) {
 
-                    //Should ION memory for FIMC/FIMG operation be re-/allocated?
-                    if ((WIDTH(layer.displayFrame) != ctx->win[nextWindow].rect_info.w) ||
-                        (HEIGHT(layer.displayFrame) != ctx->win[nextWindow].rect_info.h)) {
+                    window_buffer_deallocate(ctx, &ctx->win[nextWindow]);
 
-                        window_buffer_deallocate(ctx, &ctx->win[nextWindow]);
+                    ctx->win[nextWindow].rect_info.x = layer.displayFrame.left;
+                    ctx->win[nextWindow].rect_info.y = layer.displayFrame.top;
+                    ctx->win[nextWindow].rect_info.w = WIDTH(layer.displayFrame);
+                    ctx->win[nextWindow].rect_info.h = HEIGHT(layer.displayFrame);
 
-                        ctx->win[nextWindow].rect_info.x = layer.displayFrame.left;
-                        ctx->win[nextWindow].rect_info.y = layer.displayFrame.top;
-                        ctx->win[nextWindow].rect_info.w = WIDTH(layer.displayFrame);
-                        ctx->win[nextWindow].rect_info.h = HEIGHT(layer.displayFrame);
-
+                    window_buffer_allocate(ctx, &ctx->win[nextWindow]);
+                } else {
+                    if (!ctx->win[nextWindow].dst_buf[ctx->win[nextWindow].current_buf]) {
                         window_buffer_allocate(ctx, &ctx->win[nextWindow]);
-                    } else {
-                        if (!ctx->win[nextWindow].dst_buf[ctx->win[nextWindow].current_buf]) {
-                            window_buffer_allocate(ctx, &ctx->win[nextWindow]);
-                        }
                     }
-
-                    break;
-
-                default:
-                    ctx->win[nextWindow].gsc.mode = mode;
-                    break;
                 }
             }
             nextWindow++;
@@ -751,8 +659,9 @@ static int perform_fimg(hwc_context_t *ctx, const hwc_layer_1_t &layer, struct h
         } else {
             fimg_cmd->param.scaling.dst_w = WIDTH(layer.displayFrame);
             fimg_cmd->param.scaling.dst_h = HEIGHT(layer.displayFrame);
-        }
+       }
     }
+
 
     if (src_handle->base) {
         formatValueHAL2G2D(src_handle->format, &g2d_format, &pixel_order, &src_bpp);
