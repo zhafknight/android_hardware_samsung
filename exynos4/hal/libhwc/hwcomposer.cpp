@@ -139,7 +139,7 @@ static bool supports_fimg(const hwc_layer_1_t &layer)
     int h = HEIGHT(layer.displayFrame);
     bool result = format_is_supported_by_fimg(handle->format) && (w <= 36 || h <= 36);
 
-    ALOGE("%s: supported: %d width/height %dx%d, displayframe: %dx%d", __func__, result, handle->width, handle->height, w, h);
+    ALOGV("%s: supported: %d width/height %dx%d, displayframe: %dx%d", __func__, result, handle->width, handle->height, w, h);
 
     return result;
 }
@@ -253,7 +253,7 @@ bool is_overlay_supported(struct hwc_context_t *ctx, hwc_layer_1_t &layer, size_
 
     bool fimc_supported = modes & 1 << gsc_map_t::FIMC;
     bool fimg_supported = modes & 1 << gsc_map_t::FIMG;
-    ALOGD("%s: Overlays supported: fimc:%d fimg:%d", __FUNCTION__, fimc_supported, fimg_supported);
+    ALOGV("%s: Overlays supported: fimc:%d fimg:%d", __FUNCTION__, fimc_supported, fimg_supported);
 
     if (!modes)
        return false;
@@ -496,7 +496,7 @@ void assignWindows(hwc_context_t *ctx, hwc_display_contents_1_t *contents)
                     fimc_count++;
                     ctx->win[nextWindow].gsc.mode = gsc_map_t::FIMC;
                 }
-                ALOGD("%s: \tlayer(%d) using FIM%c for format(%d)", __func__, i, (ctx->win[nextWindow].gsc.mode == gsc_map_t::FIMG)?'G':'C', handle->format);
+                ALOGV("%s: \tlayer(%d) using FIM%c for format(%d)", __func__, i, (ctx->win[nextWindow].gsc.mode == gsc_map_t::FIMG)?'G':'C', handle->format);
 
                 //Should ION memory for FIMC/FIMG operation be re-/allocated?
                 if ((WIDTH(layer.displayFrame) != ctx->win[nextWindow].rect_info.w) ||
