@@ -556,24 +556,24 @@ static int alloc_device_alloc(alloc_device_t* dev, int w, int h, int format,
             /* We need at least 0x1802930 for playing video */
             if (!(l_usage & GRALLOC_USAGE_HW_ION)) {
                 l_usage |= GRALLOC_USAGE_HW_ION; // Exynos HWC wants ION-friendly memory allocation
-                ALOGD("%s added usage GRALLOC_USAGE_HW_ION because of format\n", __func__);
+                ALOGD_IF(debug_level > 0, "%s added usage GRALLOC_USAGE_HW_ION because of format\n", __func__);
             }
 
             if (!(l_usage & GRALLOC_USAGE_PRIVATE_NONECACHE)) {
                 l_usage |= GRALLOC_USAGE_PRIVATE_NONECACHE; // Exynos HWC wants ION-friendly memory allocation
-                ALOGD("%s added usage GRALLOC_USAGE_PRIVATE_NONECACHE because of format\n", __func__);
+                ALOGD_IF(debug_level > 0, "%s added usage GRALLOC_USAGE_PRIVATE_NONECACHE because of format\n", __func__);
             }
 
             if (!(l_usage & GRALLOC_USAGE_SW_WRITE_OFTEN)) {
                 l_usage |= GRALLOC_USAGE_SW_WRITE_OFTEN; // Exynos HWC wants ION-friendly memory allocation
-                ALOGD("%s added usage GRALLOC_USAGE_SW_WRITE_OFTEN because of format\n", __func__);
+                ALOGD_IF(debug_level > 0, "%s added usage GRALLOC_USAGE_SW_WRITE_OFTEN because of format\n", __func__);
             }
         }
 
         switch (format) {
         case HAL_PIXEL_FORMAT_YV12: //0x32315659
             l_usage |= GRALLOC_USAGE_HW_ION;
-            ALOGD("%s added GRALLOC_USAGE_HW_ION because of YV12", __func__);
+            ALOGD_IF(debug_level > 0, "%s added GRALLOC_USAGE_HW_ION because of YV12", __func__);
 
         case 0x200:
         case 0x201:
