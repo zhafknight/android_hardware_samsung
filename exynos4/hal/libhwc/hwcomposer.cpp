@@ -1294,6 +1294,8 @@ static void hwc_dump(struct hwc_composer_device_1* dev, char *buff, int buff_len
                 cfg->phys_addr, cfg->offset, cfg->stride, cfg->format, cfg->blending, cfg->plane_alpha);
     }
 
+    ctx->force_gpu = property_get_int32("debug.hwc.force_gpu", 0);
+    ctx->force_fb = ctx->force_gpu;
     ctx->enable_fimg = property_get_int32("persist.sys.hwc.enable_fimg", 0);
     ctx->multi_fimg = property_get_int32("persist.sys.hwc.multi_fimg", 0);
 
