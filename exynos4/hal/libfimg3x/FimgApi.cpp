@@ -203,6 +203,7 @@ bool FimgApi::t_UnLock(void)
 extern "C" int stretchFimgApi(FimgRect * src, FimgRect * dst, FimgClip * clip, FimgFlag * flag)
 {
     FimgApi * fimgApi = createFimgApi();
+
     if(fimgApi == NULL) {
         PRINT("%s::createFimgApi() fail \n", __func__);
         return -1;

@@ -21,27 +21,17 @@
 #define ANDROID_HWCOMPOSER_UTILS_H
 
 #include <math.h>
-#if defined(SAMSUNG_EXYNOS4210)
-#include "../libfimg3x/FimgApi.h"
-#else
 #include "FimgApi.h"
-#endif
 
 bool is_yuv_format(unsigned int color_format);
 uint8_t format_to_bpp(int format);
 enum s3c_fb_pixel_format format_to_s3c_format(int format);
 enum s3c_fb_blending blending_to_s3c_blending(int32_t blending);
-#if defined(SAMSUNG_EXYNOS4210)
-unsigned int formatValueHAL2G2D(int hal_format,
-        G2D_COLOR_SPACE *g2d_format,
-        uint32_t *g2d_bpp);
-#else
 unsigned int formatValueHAL2G2D(int hal_format,
         color_format *g2d_format,
         pixel_order *g2d_order,
         uint32_t *g2d_bpp);
 enum rotation rotateValueHAL2G2D(unsigned char transform);
-#endif
 int rotateValueHAL2PP(unsigned char transform);
 int multipleOf2(int number);
 

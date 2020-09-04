@@ -35,10 +35,6 @@ LOCAL_SRC_FILES := hwcomposer.cpp \
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/../include \
                     $(TOP)/system/core/libsync/include
 
-ifeq ($(TARGET_BOOTLOADER_BOARD_NAME),smdk4210)
-    LOCAL_CFLAGS += -DSAMSUNG_EXYNOS4210
-endif
-
 LOCAL_MODULE := hwcomposer.$(TARGET_BOARD_PLATFORM)
 LOCAL_CFLAGS += -DLOG_TAG=\"hwcomposer\"
 LOCAL_CFLAGS += -Wno-error

@@ -558,66 +558,6 @@ static int hwc_prepare(hwc_composer_device_1_t *dev, size_t numDisplays, hwc_dis
     return 0;
 }
 
-#if defined(SAMSUNG_EXYNOS4210)
-static int perform_fimg(hwc_context_t *ctx, const hwc_layer_1_t &layer, struct hwc_win_info_t &win, int dst_format)
-{
-    int ret = 0;
-
-    G2D_COLOR_SPACE color_format;
-    uint32_t bytes_per_pixel;
-    FimgRect * src = &win.g2d_src_img;
-    FimgRect * dst = &win.g2d_dst_img;
-    FimgClip * clip = &win.clip;
-    FimgFlag * flag = &win.flag;
-
-    memset(src, 0, sizeof(FimgRect));
-    memset(dst, 0, sizeof(FimgRect));
-    memset(clip, 0, sizeof(FimgClip));
-    memset(flag, 0, sizeof(FimgFlag));
-
-    private_handle_t *src_handle = private_handle_t::dynamicCast(layer.handle);
-    private_handle_t *dst_handle = private_handle_t::dynamicCast(win.dst_buf[win.current_buf]);
-
-    hwc_rect_t crop = integerizeSourceCrop(layer.sourceCropf);
-    src->x = crop.left;
-    src->y = crop.top;
-    src->w = crop.right;
-    src->h = crop.bottom;
-    src->full_w = src_handle->width;
-    src->full_h = src_handle->height;
-    src->addr = (unsigned char *)src_handle->base;
-    formatValueHAL2G2D(src_handle->format, &color_format, &bytes_per_pixel);
-    src->color_format = color_format;
-    src->bytes_per_pixel = bytes_per_pixel;
-
-    dst->x = 0;
-    dst->y = 0;
-    dst->w = WIDTH(layer.displayFrame);
-    dst->h = HEIGHT(layer.displayFrame);
-    dst->full_w = WIDTH(layer.displayFrame);
-    dst->full_h = HEIGHT(layer.displayFrame);
-    formatValueHAL2G2D(dst_format, &color_format, &bytes_per_pixel);
-    dst->color_format = color_format;
-    dst->bytes_per_pixel = bytes_per_pixel;
-    dst->addr = (unsigned char *)dst_handle->ion_memory;
-
-    if (layer.acquireFenceFd >= 0) {
-        sync_wait(layer.acquireFenceFd, 1000);
-    }
-
-    ret = stretchFimgApi(src, dst, clip, flag);
-    if (ret < 0) {
-        ALOGE("%s: stretch failed", __FUNCTION__);
-        dump_layer(&layer, __FUNCTION__);
-    }
-
-    if (layer.acquireFenceFd >= 0) {
-        close(layer.acquireFenceFd);
-    }
-
-    return ret;
-}
-#else
 static int perform_fimg(hwc_context_t *ctx, const hwc_layer_1_t &layer, struct hwc_win_info_t &win, int dst_format)
 {
     private_handle_t *src_handle = private_handle_t::dynamicCast(layer.handle);
@@ -728,7 +668,6 @@ static int perform_fimg(hwc_context_t *ctx, const hwc_layer_1_t &layer, struct h
 
     return ret;
 }
-#endif
 
 static int perform_fimc(hwc_context_t *ctx, const hwc_layer_1_t &layer, struct hwc_win_info_t &win)
 {
@@ -967,11 +906,7 @@ static int post_fimd(hwc_context_t *ctx, hwc_display_contents_1_t* contents)
                     private_handle_t* dst_hnd = private_handle_t::dynamicCast(win.dst_buf[win.current_buf]);
                     config[window].phys_addr = dst_hnd->paddr;
                     config[window].offset = 0;
-#if defined(SAMSUNG_EXYNOS4210)
-                    config[window].stride = config[window].w * 4;
-#else
                     config[window].stride = win.g2d_dst_img.stride;
-#endif
                 }
                 break;
 
@@ -1506,12 +1441,11 @@ static int hwc_device_open(const struct hw_module_t* module, const char* name,
         if (v4l2_open(dev) < 0)
             ALOGE("%s Failed to initialize FIMC", __FUNCTION__);
 
-#if !defined(SAMSUNG_EXYNOS4210)
         //force re-fill of fimg_cmd
         for (size_t i = 0; i < NUM_HW_WINDOWS; i++) {
             dev->win[i].fimg_cmd.op = (enum blit_op) -1;
         }
-#endif
+
         status = 0;
     }
     return status;
