@@ -18,8 +18,8 @@
 **
 */
 
-#ifndef FIMG_API_H
-#define FIMG_API_H
+#ifndef FIMG3X_API_H
+#define FIMG3X_API_H
 
 #include <utils/Log.h>
 
@@ -183,4 +183,4 @@ extern "C"
 #endif
 int              SyncFimgApi(void);
 
-#endif //FIMG_API_H
+#endif //FIMG3X_API_H

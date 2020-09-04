@@ -62,7 +62,6 @@ FimgApi * FimgC210::CreateInstance()
     Mutex::Autolock autolock(m_instanceLock);
 
     FimgApi * ptrFimg = NULL;
-
     // Using List like RingBuffer...
     for(int i = m_curFimgC210Index; i < NUMBER_FIMG_LIST; i++) {
         if(m_ptrFimgApiList[i] == NULL)

@@ -120,6 +120,45 @@ enum s3c_fb_blending blending_to_s3c_blending(int32_t blending)
     }
 }
 
+#if defined(SAMSUNG_EXYNOS4210)
+unsigned int formatValueHAL2G2D(int hal_format,
+        G2D_COLOR_SPACE *g2d_format,
+        uint32_t *g2d_bpp)
+{
+    *g2d_format = G2D_MAX_COLOR_SPACE;
+    *g2d_bpp    = 0;
+
+    switch (hal_format) {
+    /* 16bpp */
+    case HAL_PIXEL_FORMAT_RGB_565:
+        *g2d_format = G2D_XRGB_1555;
+        *g2d_bpp    = 2;
+        break;
+    case HAL_PIXEL_FORMAT_RGBA_4444:
+        *g2d_format = G2D_RGBA_4444;
+        *g2d_bpp    = 2;
+        break;
+        /* 32bpp */
+    case HAL_PIXEL_FORMAT_RGBX_8888:
+        *g2d_format = G2D_XRGB_8888;
+        *g2d_bpp    = 4;
+        break;
+    case HAL_PIXEL_FORMAT_BGRA_8888:
+        *g2d_format = G2D_ABGR_8888;
+        *g2d_bpp    = 4;
+        break;
+    case HAL_PIXEL_FORMAT_RGBA_8888:
+        *g2d_format = G2D_ABGR_8888;
+        *g2d_bpp    = 4;
+        break;
+    default:
+        ALOGE("%s: no matching color format(0x%x): failed", __FUNCTION__, hal_format);
+        return -1;
+        break;
+    }
+    return 0;
+}
+#else
 unsigned int formatValueHAL2G2D(int hal_format,
         color_format *g2d_format,
         pixel_order *g2d_order,
@@ -191,6 +230,8 @@ enum rotation rotateValueHAL2G2D(unsigned char transform)
     default: return ORIGIN;
     }
 }
+#endif
+
 
 int rotateValueHAL2PP(unsigned char transform)
 {

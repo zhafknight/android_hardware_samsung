@@ -52,7 +52,13 @@
 #include "window.h"
 #include "utils.h"
 #include "v4l2.h"
+
+#if defined(SAMSUNG_EXYNOS4210)
+#include "../libfimg3x/FimgApi.h"
+#else
 #include "FimgApi.h"
+#endif
+
 
 #ifndef _VSYNC_PERIOD
 #define _VSYNC_PERIOD 1000000000UL
@@ -113,9 +119,16 @@ struct hwc_win_info_t {
     size_t                      current_buf;
 
     struct gsc_map_t            gsc;
+#if defined(SAMSUNG_EXYNOS4210)
+    FimgRect                    g2d_src_img;
+    FimgRect                    g2d_dst_img;
+    FimgClip                    clip;
+    FimgFlag                    flag;
+#else
     struct fimg2d_blit          fimg_cmd; //if geometry, blending hasn't changed, only buffers have to be swapped
     struct fimg2d_image         g2d_src_img;
     struct fimg2d_image         g2d_dst_img;
+#endif
     struct s3c_fb_win_config	win_cfg;
 
     int                         blending;

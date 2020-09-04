@@ -27,8 +27,11 @@
 
 #include <utils/Log.h>
 #include <pthread.h>
+#if defined(SAMSUNG_EXYNOS4210)
+#include "sec_g2d.h"
+#else
 #include "sec_g2d_4x.h"
-
+#endif
 #undef REAL_DEBUG
 #undef ANDROID_LOG
 
