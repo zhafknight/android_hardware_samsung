@@ -64,7 +64,8 @@ FimgApi * FimgC210::CreateInstance()
     FimgApi * ptrFimg = NULL;
 
     // Using List like RingBuffer...
-    for(int i = m_curFimgC210Index; i < NUMBER_FIMG_LIST; i++) {
+    int i = m_curFimgC210Index;
+    if (i < NUMBER_FIMG_LIST) {
         if(m_ptrFimgApiList[i] == NULL)
             m_ptrFimgApiList[i] = new FimgC210;
 
