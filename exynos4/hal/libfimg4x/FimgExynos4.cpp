@@ -62,7 +62,8 @@ FimgApi *FimgV4x::CreateInstance()
 
     FimgApi *ptrFimg = NULL;
 
-    for(unsigned int i = m_curFimgV4xIndex; i < NUMBER_FIMG_LIST; i++) {
+//    for(unsigned int i = m_curFimgV4xIndex; i < NUMBER_FIMG_LIST; i++) {
+    unsigned int i = 0;
         if (m_ptrFimgApiList[i] == NULL)
             m_ptrFimgApiList[i] = new FimgV4x;
 
@@ -82,7 +83,7 @@ FimgApi *FimgV4x::CreateInstance()
 
         ptrFimg = m_ptrFimgApiList[i];
         goto CreateInstance_End;
-    }
+//    }
 
 CreateInstance_End :
 
