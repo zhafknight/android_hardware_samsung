@@ -1,5 +1,6 @@
 soong_namespace {
 }
 subdirs = [
-    "exynos4"
+    "exynos4",
+    "audio_service",
 ]
