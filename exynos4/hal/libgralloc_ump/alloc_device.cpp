@@ -306,12 +306,6 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
     }
 
     ret = -1;
-    if (usage & (GRALLOC_USAGE_HW_ION | GRALLOC_USAGE_HW_RENDER |
-                 GRALLOC_USAGE_HW_TEXTURE | GRALLOC_USAGE_HW_VIDEO_ENCODER)) {
-        ALOGD("%s: Allocating graphicbuffer via ION (size: %d)...", __func__, size);
-        priv_alloc_flag = priv_alloc_flag | private_handle_t::PRIV_FLAGS_GRAPHICBUFFER;
-        ret = gralloc_alloc_ion(dev, size, usage, format, &ion_fd, &ion_paddr, &priv_alloc_flag, &ump_mem_handle);
-    }
 
     if (ret < 0) {
         // may happen if ion carveout is out of memory, or if the
