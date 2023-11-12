@@ -25,6 +25,6 @@ ifeq ($(BOARD_USE_STOREMETADATA), true)
 LOCAL_CFLAGS += -DUSE_STOREMETADATA
 endif
 
-LOCAL_CFLAGS += -Wno-error
+LOCAL_CFLAGS += -Wno-error -std=c89
 
 include $(BUILD_STATIC_LIBRARY)
