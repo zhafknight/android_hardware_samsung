@@ -29,7 +29,7 @@ LOCAL_C_INCLUDES := \
 ifeq ($(BOARD_USE_SAMSUNG_COLORFORMAT), true)
 LOCAL_CFLAGS += -DUSE_SAMSUNG_COLORFORMAT
 endif
-LOCAL_CFLAGS += -Wno-error
+LOCAL_CFLAGS += -Wno-error -std=c89
 
 LOCAL_MODULE := libseccscapi
 
