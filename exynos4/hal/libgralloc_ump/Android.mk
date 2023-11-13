@@ -33,6 +33,9 @@ LOCAL_C_INCLUDES += \
     bionic/libc/include \
     $(LOCAL_PATH)/../include
 
+LOCAL_HEADER_LIBRARIES := \
+    libhardware_headers
+
 LOCAL_SRC_FILES := \
 	gralloc_module.cpp \
 	alloc_device.cpp \
