@@ -26,7 +26,7 @@
 #include <hardware/gralloc.h>
 
 #include <log/log.h>
-#include <sync/sync.h>
+#include <android/sync.h>
 
 #include <inttypes.h>
 
