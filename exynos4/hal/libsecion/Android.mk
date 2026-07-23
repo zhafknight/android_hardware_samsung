@@ -19,6 +19,7 @@ include $(CLEAR_VARS)
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog libcutils
+LOCAL_VENDOR_MODULE := true
 
 LOCAL_C_INCLUDES := \
 	$(LOCAL_PATH)/../include
