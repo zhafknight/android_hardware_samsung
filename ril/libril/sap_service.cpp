@@ -16,11 +16,16 @@
 
 #define LOG_TAG "RIL_SAP"
 
-#include <android/hardware/radio/1.1/ISap.h>
+#include <android/binder_manager.h>
+#include <android/binder_process.h>
 
-#include <hwbinder/IPCThreadState.h>
-#include <hwbinder/ProcessState.h>
-#include <sap_service.h>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#include <android/hardware/radio/1.1/ISap.h>
+#include <libradiocompat/Sap.h>
+#pragma clang diagnostic pop
+
+#include "sap_service.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 
@@ -139,6 +144,12 @@ void SapImpl::sendFailedResponse(MsgId msgId, int32_t token, int numPointers, ..
     }
     va_end(ap);
     Return<void> retStatus;
+
+    if (sapCallback == NULL) {
+        RLOGE("sendFailedResponse: sapCallback == NULL; msgId = %d; token = %d", msgId, token);
+        return;
+    }
+
     switch(msgId) {
         case MsgId_RIL_SIM_SAP_CONNECT:
             retStatus = sapCallback->connectResponse(token, SapConnectRsp::CONNECT_FAILURE, 0);
@@ -925,6 +936,8 @@ void sap::processUnsolResponse(MsgHeader *rsp, RilSapSocket *sapSocket) {
 
 void sap::registerService(const RIL_RadioFunctions *callbacks) {
     using namespace android::hardware;
+    namespace compat = android::hardware::radio::compat;
+
     int simCount = 1;
     const char *serviceNames[] = {
         android::RIL_getServiceName()
@@ -960,7 +973,18 @@ void sap::registerService(const RIL_RadioFunctions *callbacks) {
         sapService[i]->slotId = i;
         sapService[i]->rilSocketId = socketIds[i];
         RLOGD("registerService: starting ISap %s for slotId %d", serviceNames[i], i);
-        android::status_t status = sapService[i]->registerAsService(serviceNames[i]);
-        RLOGD("registerService: started ISap %s status %d", serviceNames[i], status);
+
+        // use a compat shim to convert HIDL interface to AIDL and publish it
+        // TODO(bug 220004469): replace with a full AIDL implementation
+        static auto aidlHal = ndk::SharedRefBase::make<compat::Sap>(sapService[i]);
+        const auto instance =
+                std::string(compat::Sap::descriptor) + "/" + std::string(serviceNames[i]);
+        const auto status = AServiceManager_addService(aidlHal->asBinder().get(), instance.c_str());
+        if (status == STATUS_OK) {
+            RLOGD("registerService addService: instance %s, status %d", instance.c_str(), status);
+        } else {
+            RLOGE("failed to register sapService for instance %s, status %d", instance.c_str(),
+                  status);
+        }
     }
 }

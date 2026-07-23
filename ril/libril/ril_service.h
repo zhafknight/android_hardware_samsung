@@ -17,10 +17,10 @@
 #ifndef RIL_SERVICE_H
 #define RIL_SERVICE_H
 
-#include <telephony/ril.h>
+#include "ril.h"
 #include <ril_internal.h>
 
-namespace radio {
+namespace radio_1_6 {
 void registerService(RIL_RadioFunctions *callbacks, android::CommandInfo *commands);
 
 int getIccCardStatusResponse(int slotId, int responseType,
@@ -117,7 +117,7 @@ int sendSmsResponse(int slotId,
                    int responseType, int serial, RIL_Errno e, void *response,
                    size_t responselen);
 
-int sendSMSExpectMoreResponse(int slotId,
+int sendSmsExpectMoreResponse(int slotId,
                              int responseType, int serial, RIL_Errno e, void *response,
                              size_t responselen);
 
@@ -280,6 +280,14 @@ int setPreferredNetworkTypeResponse(int slotId,
                                    size_t responselen);
 
 int getPreferredNetworkTypeResponse(int slotId,
+                                   int responseType, int serial, RIL_Errno e, void *response,
+                                   size_t responselen);
+
+int setPreferredNetworkTypeBitmapResponse(int slotId,
+                                   int responseType, int serial, RIL_Errno e, void *response,
+                                   size_t responselen);
+
+int getPreferredNetworkTypeBitmapResponse(int slotId,
                                    int responseType, int serial, RIL_Errno e, void *response,
                                    size_t responselen);
 
@@ -521,6 +529,13 @@ int getModemActivityInfoResponse(int slotId,
                                 int responseType, int serial, RIL_Errno e,
                                 void *response, size_t responselen);
 
+int getModemStackStatusResponse(int slotId,
+                                int responseType, int serial, RIL_Errno e,
+                                void *response, size_t responselen);
+
+int enableModemResponse(int slotId, int responseType, int serial, RIL_Errno e,
+                                void *response, size_t responselen);
+
 int setAllowedCarriersResponse(int slotId,
                               int responseType, int serial, RIL_Errno e,
                               void *response, size_t responselen);
@@ -721,6 +736,9 @@ int networkScanResultInd(int slotId,
                          int indicationType, int token, RIL_Errno e, void *response,
                          size_t responselen);
 
+int reportPhysicalChannelConfigs(int slotId, int indicationType,
+                        int token, RIL_Errno e, void *response, size_t responselen);
+
 int keepaliveStatusInd(int slotId,
                        int indicationType, int token, RIL_Errno e, void *response,
                        size_t responselen);
@@ -737,15 +755,131 @@ int setCarrierInfoForImsiEncryptionResponse(int slotId,
                                             int responseType, int serial, RIL_Errno e,
                                             void *response, size_t responseLen);
 
+int emergencyDialResponse(int slotId,
+                          int responseType, int serial, RIL_Errno e,
+                          void *response, size_t responselen);
+
 int carrierInfoForImsiEncryption(int slotId,
                         int responseType, int serial, RIL_Errno e,
                         void *response, size_t responseLen);
+
+int setSystemSelectionChannelsResponse(int slotId, int responseType, int serial,
+                                       RIL_Errno e, void *response, size_t responseLen);
+
+int getSystemSelectionChannelsResponse(int slotId, int responseType, int serial,
+                                       RIL_Errno e, void *response, size_t responseLen);
+
+int setSignalStrengthReportingCriteriaResponse(int slotId, int responseType, int serial,
+                                               RIL_Errno e, void *response, size_t responselen);
+
+int setLinkCapacityReportingCriteriaResponse(int slotId, int responseType, int serial,
+                                             RIL_Errno e, void *response, size_t responselen);
+
+int enableUiccApplicationsResponse(int slotId,
+                                 int responseType, int serial, RIL_Errno e,
+                                 void *response, size_t responselen);
+
+int areUiccApplicationsEnabledResponse(int slotId,
+                                     int responseType, int serial, RIL_Errno e,
+                                     void *response, size_t responselen);
+
+int setRadioPowerResponse(int slotId, int responseType, int serial, RIL_Errno e, void *response,
+                          size_t responselen);
+
+int getBarringInfoResponse(int slotId, int responseType, int serial, RIL_Errno e, void *response,
+                           size_t responselen);
+
+int sendCdmaSmsExpectMoreResponse(int slotId, int responseType, int serial, RIL_Errno e,
+                                  void *response, size_t responselen);
+
+int supplySimDepersonalizationResponse(int slotId, int responseType, int serial, RIL_Errno e,
+                                       void *response, size_t responselen);
+
+int setNrDualConnectivityStateResponse(int slotId, int responseType, int serial,
+                                    RIL_Errno e, void* /* response */, size_t responseLen);
+int isNrDualConnectivityEnabledResponse(int slotId, int responseType, int serial,
+                                        RIL_Errno e, void* response, size_t responseLen);
+
+int allocatePduSessionIdResponse(int slotId, int responseType, int serial,
+                                        RIL_Errno e, void* response, size_t responseLen);
+int releasePduSessionIdResponse(int slotId, int responseType, int serial,
+                                        RIL_Errno e, void* response, size_t responseLen);
+int startHandoverResponse(int slotId, int responseType, int serial,
+                                        RIL_Errno e, void* response, size_t responseLen);
+int cancelHandoverResponse(int slotId, int responseType, int serial,
+                                        RIL_Errno e, void* response, size_t responseLen);
+
+int setAllowedNetworkTypesBitmapResponse(int slotId, int responseType, int serial,
+                                  RIL_Errno e, void *response, size_t responselen);
+
+int setDataThrottlingResponse(int slotId, int responseType, int serial,
+                              RIL_Errno e, void *response, size_t responselen);
+
+int getAllowedNetworkTypesBitmapResponse(int slotId, int responseType, int serial,
+                                  RIL_Errno e, void *response, size_t responselen);
+
+int getSlicingConfigResponse(int slotId, int responseType, int serial,
+                             RIL_Errno e, void *response, size_t responseLen);
+
+int getSimPhonebookRecordsResponse(int slotId, int responseType, int serial,
+                             RIL_Errno e, void *response, size_t responseLen);
+
+int getSimPhonebookCapacityResponse(int slotId, int responseType, int serial,
+                             RIL_Errno e, void *response, size_t responseLen);
+
+int updateSimPhonebookRecordsResponse(int slotId, int responseType, int serial,
+                             RIL_Errno e, void *response, size_t responseLen);
+
 
 pthread_rwlock_t * getRadioServiceRwlock(int slotId);
 
 void setNitzTimeReceived(int slotId, long timeReceived);
 
-int processRadioState(int newRadioState, int slotId, int indicationType, int token, RIL_Errno e);
-}   // namespace radio
+/******************************************************************************/
+/*          Radio Config interfaces' corresponding responseFunction           */
+/******************************************************************************/
+void registerConfigService(RIL_RadioFunctions *callbacks, android::CommandInfo *commands);
+
+int getSimSlotsStatusResponse(int slotId, int responseType, int serial,
+                              RIL_Errno e, void *response, size_t responseLen);
+
+int setSimSlotsMappingResponse(int slotId, int responseType, int serial,
+                               RIL_Errno e, void *response, size_t responseLen);
+
+int getPhoneCapabilityResponse(int slotId, int responseType, int serial,
+                               RIL_Errno e, void *response, size_t responseLen);
+
+int setPreferredDataModemResponse(int slotId, int responseType, int serial,
+                                  RIL_Errno e, void *response, size_t responseLen);
+
+int setModemsConfigResponse(int slotId, int responseType, int serial,
+                            RIL_Errno e, void *response, size_t responseLen);
+
+int getModemsConfigResponse(int slotId, int responseType, int serial,
+                            RIL_Errno e, void *response, size_t responseLen);
+
+int getHalDeviceCapabilitiesResponse(int slotId, int responseType, int serial,
+                            RIL_Errno e, void *response, size_t responseLen);
+
+/******************************************************************************/
+/*    Radio Config unsolicited interfaces' corresponding responseFunction     */
+/******************************************************************************/
+int simSlotsStatusChanged(int slotId, int indicationType, int token,
+                          RIL_Errno e, void *response, size_t responseLen);
+
+}  // namespace radio_1_6
+
+/******************************************************************************/
+/* AIDL-only Radio Indication unsolicited interfaces' handling functions.     */
+/******************************************************************************/
+namespace radio_aidl {
+/* These are not defined in HIDL HALs through version 1.6 but we use the same RIL infrastructure to
+ * coordinate holding a wake lock and invoking these methods. */
+int cellularIdentifierDisclosedInd(int slotId, int indicationType, int token, RIL_Errno e,
+                                   void* response, size_t responselen);
+
+int securityAlgorithmUpdatedInd(int slotId, int indicationType, int token, RIL_Errno e,
+                                void* response, size_t responselen);
+}  // namespace radio_aidl
 
 #endif  // RIL_SERVICE_H

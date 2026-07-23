@@ -33,12 +33,12 @@ namespace android {
 #define RESPONSE_UNSOLICITED_ACK_EXP 4
 
 // Enable verbose logging
-#define VDBG 1
+#define VDBG 0
 
 #define MIN(a,b) ((a)<(b) ? (a) : (b))
 
 // Enable RILC log
-#define RILC_LOG 1
+#define RILC_LOG 0
 
 #if RILC_LOG
     #define startRequest           sprintf(printBuf, "(")
