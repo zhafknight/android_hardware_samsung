@@ -17,6 +17,7 @@ LOCAL_SRC_FILES := \
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_MODULE := libsecosal
+LOCAL_VENDOR_MODULE := true
 
 LOCAL_CFLAGS := -Wno-error
 
@@ -37,11 +38,12 @@ LOCAL_SHARED_LIBRARIES := libcutils libutils \
 	libandroid_runtime \
 	libbinder \
 	libmedia
+LOCAL_HEADER_LIBRARIES := libhardware_headers libutils_headers
 
 LOCAL_C_INCLUDES := $(SEC_OMX_INC)/khronos \
 	$(SEC_OMX_INC)/sec \
 	$(SEC_OMX_TOP)/osal \
 	$(SEC_OMX_COMPONENT)/common \
-	$(SEC_OMX_COMPONENT)/video/dec
-
+	$(SEC_OMX_COMPONENT)/video/dec \
+	hardware/samsung/exynos4/hal/include
 include $(BUILD_STATIC_LIBRARY)

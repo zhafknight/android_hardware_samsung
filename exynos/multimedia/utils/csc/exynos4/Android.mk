@@ -32,6 +32,7 @@ endif
 LOCAL_CFLAGS += -Wno-error
 
 LOCAL_MODULE := libseccscapi
+LOCAL_VENDOR_MODULE := true
 
 LOCAL_PRELINK_MODULE := false
 
@@ -41,5 +42,6 @@ LOCAL_ARM_MODE := arm
 
 LOCAL_STATIC_LIBRARIES :=
 LOCAL_SHARED_LIBRARIES := liblog libfimc libhwconverter
+LOCAL_HEADER_LIBRARIES := libutils_headers
 
 include $(BUILD_STATIC_LIBRARY)

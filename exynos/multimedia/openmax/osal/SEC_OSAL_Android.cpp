@@ -43,6 +43,11 @@
 #include "SEC_OMX_Macros.h"
 #include "SEC_OMX_Vdec.h"
 
+/* Samsung Exynos4 private gralloc usage extension (missing from upstream headers) */
+#ifndef GRALLOC_USAGE_YUV_ADDR
+#define GRALLOC_USAGE_YUV_ADDR 0x04000000U
+#endif
+
 #undef  SEC_LOG_TAG
 #define SEC_LOG_TAG    "SEC_OSAL_Android"
 #define SEC_LOG_OFF
