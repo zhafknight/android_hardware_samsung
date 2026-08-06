@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <pthread.h>
 
 #include <cutils/log.h>
 #include <cutils/atomic.h>
@@ -152,6 +153,8 @@ struct hwc_context_t {
     int       vsync_period;
     int       vsync_timestamp_fd;
     pthread_t vsync_thread;
+    volatile bool vsync_thread_running;
+    int       vsync_stop_fd[2]; // [0]=read end, [1]=write end (wakeup pipe)
 
     bool         fb_needed;
     size_t       first_fb;

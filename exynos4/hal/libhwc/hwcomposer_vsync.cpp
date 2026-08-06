@@ -17,8 +17,8 @@
 #include "hwcomposer.h"
 #include "hwcomposer_vsync.h"
 
-#include <cutils/threads.h>
-
+#include <pthread.h>
+#include <unistd.h>
 #include <utils/threads.h>
 
 #include <sys/prctl.h>
@@ -54,9 +54,11 @@ static void *hwc_vsync_thread(void *data)
 
     memset(buf, 0, sizeof(buf));
 
-    FD_ZERO(&exceptfds);
-    FD_SET(ctx->vsync_timestamp_fd, &exceptfds);
-    do {
+    int maxfd = ctx->vsync_timestamp_fd;
+    if (ctx->vsync_stop_fd[0] > maxfd)
+        maxfd = ctx->vsync_stop_fd[0];
+
+    while (ctx->vsync_thread_running) {
         ssize_t len = read(ctx->vsync_timestamp_fd, buf, sizeof(buf));
         timestamp = strtoull(buf, NULL, 0);
         if (ctx->procs) {
@@ -65,9 +67,19 @@ static void *hwc_vsync_thread(void *data)
             }
             ctx->procs->vsync(ctx->procs, 0, timestamp);
         }
-        select(ctx->vsync_timestamp_fd + 1, NULL, NULL, &exceptfds, NULL);
+
+        FD_ZERO(&exceptfds);
+        FD_SET(ctx->vsync_timestamp_fd, &exceptfds);
+        FD_SET(ctx->vsync_stop_fd[0], &exceptfds);
+        res = select(maxfd + 1, NULL, NULL, &exceptfds, NULL);
+
+        if (!ctx->vsync_thread_running || FD_ISSET(ctx->vsync_stop_fd[0], &exceptfds)) {
+            // clean shutdown requested via close_vsync_thread()
+            break;
+        }
+
         lseek(ctx->vsync_timestamp_fd, 0, SEEK_SET);
-    } while (1);
+    }
 
     return NULL;
 }
@@ -78,16 +90,53 @@ void init_vsync_thread(hwc_context_t* ctx)
 
     ALOGD("Initializing VSYNC Thread: " HWC_VSYNC_THREAD_NAME);
 
+    // Not opened yet -- hwc_vsync_thread() opens the real fd once it starts.
+    // Must not stay at the memset()-default of 0 (stdin), or a failed
+    // pthread_create() below would make close_vsync_thread() close(0).
+    ctx->vsync_timestamp_fd = -1;
+
+    if (pipe(ctx->vsync_stop_fd) != 0) {
+        ALOGE("%s: failed to create stop pipe: %s", __FUNCTION__, strerror(errno));
+        ctx->vsync_stop_fd[0] = -1;
+        ctx->vsync_stop_fd[1] = -1;
+    }
+
+    ctx->vsync_thread_running = true;
+
     ret = pthread_create(&ctx->vsync_thread, NULL, hwc_vsync_thread, (void*) ctx);
     if (ret) {
         ALOGE("%s: failed to create %s: %s", __FUNCTION__,
               HWC_VSYNC_THREAD_NAME, strerror(ret));
+        // pthread_create failed: no live thread was started, make sure we
+        // never try to join/kill a bogus handle later in close_vsync_thread()
+        ctx->vsync_thread_running = false;
+        ctx->vsync_thread = 0;
     }
 }
 
 void close_vsync_thread(hwc_context_t* ctx)
 {
-    pthread_kill(ctx->vsync_thread, SIGTERM);
+    if (!ctx->vsync_thread_running && ctx->vsync_thread == 0) {
+        // init_vsync_thread() never successfully started a thread,
+        // nothing to stop/join here.
+        if (ctx->vsync_stop_fd[0] >= 0) close(ctx->vsync_stop_fd[0]);
+        if (ctx->vsync_stop_fd[1] >= 0) close(ctx->vsync_stop_fd[1]);
+        if (ctx->vsync_timestamp_fd >= 0) close(ctx->vsync_timestamp_fd);
+        return;
+    }
+
+    // signal clean shutdown instead of pthread_kill(SIGTERM), which can
+    // terminate the whole process by default disposition rather than
+    // just this thread.
+    ctx->vsync_thread_running = false;
+    if (ctx->vsync_stop_fd[1] >= 0) {
+        char c = 'x';
+        write(ctx->vsync_stop_fd[1], &c, 1);
+    }
+
     pthread_join(ctx->vsync_thread, NULL);
-    close(ctx->vsync_timestamp_fd);
+
+    if (ctx->vsync_stop_fd[0] >= 0) close(ctx->vsync_stop_fd[0]);
+    if (ctx->vsync_stop_fd[1] >= 0) close(ctx->vsync_stop_fd[1]);
+    if (ctx->vsync_timestamp_fd >= 0) close(ctx->vsync_timestamp_fd);
 }
