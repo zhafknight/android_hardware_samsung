@@ -24,6 +24,7 @@
 #define LOG_TAG "libfimc"
 #include <cutils/log.h>
 #include <errno.h>
+#include <stdio.h>
 
 #include "SecFimc.h"
 
@@ -570,7 +571,7 @@ bool SecFimc::create(FIMC_DEV fimc_dev,
     mS5pFimc.use_ext_out_mem = 0;
     mS5pFimc.hw_ver = 0;
 
-    sprintf(node, "%s%d", PFX_NODE_FIMC, (int)fimc_dev);
+    snprintf(node, sizeof(node), "%s%d", PFX_NODE_FIMC, (int)fimc_dev);
 
 
     /* open device file */

@@ -19,6 +19,7 @@ include $(CLEAR_VARS)
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog libutils libcutils
+LOCAL_HEADER_LIBRARIES := libhardware_headers libutils_headers
 ifeq ($(BOARD_SUPPORT_SYSMMU),true)
 LOCAL_SHARED_LIBRARIES+= libMali
 endif
@@ -50,6 +51,7 @@ LOCAL_C_INCLUDES := \
 LOCAL_SRC_FILES := SecFimc.cpp
 
 LOCAL_MODULE := libfimc
+LOCAL_VENDOR_MODULE := true
 include $(BUILD_SHARED_LIBRARY)
 
 endif

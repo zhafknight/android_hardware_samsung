@@ -19,6 +19,7 @@ include $(CLEAR_VARS)
 
 LOCAL_PRELINK_MODULE := false
 LOCAL_SHARED_LIBRARIES := liblog libutils libcutils libfimc
+LOCAL_HEADER_LIBRARIES := libhardware_headers libutils_headers
 
 LOCAL_SRC_FILES := HardwareConverter.cpp
 
@@ -29,6 +30,7 @@ LOCAL_C_INCLUDES := \
 	$(TOP)/$(TARGET_OMX_PATH)/include/sec
 
 LOCAL_MODULE := libhwconverter
+LOCAL_VENDOR_MODULE := true
 
 include $(BUILD_SHARED_LIBRARY)
 
