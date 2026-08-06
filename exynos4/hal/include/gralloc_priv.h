@@ -28,6 +28,14 @@
 #ifndef GRALLOC_PRIV_H_
 #define GRALLOC_PRIV_H_
 
+/* Samsung Exynos4 private gralloc usage extensions */
+#define GRALLOC_USAGE_PRIVATE_NONECACHE 0x00800000U
+#define GRALLOC_USAGE_HW_FIMC1          0x01000000U
+#define GRALLOC_USAGE_HW_ION            0x02000000U
+#define GRALLOC_USAGE_YUV_ADDR          0x04000000U
+#define GRALLOC_USAGE_CAMERA            0x08000000U
+#define GRALLOC_USAGE_HWC_HWOVERLAY     0x20000000U
+
 #include <stdint.h>
 #include <pthread.h>
 #include <errno.h>

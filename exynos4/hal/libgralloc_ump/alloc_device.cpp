@@ -47,6 +47,10 @@
 #include "ump_ref_drv.h"
 #include "secion.h"
 
+#ifndef GRALLOC_USAGE_HW_VIDEO_ENCODER
+#define GRALLOC_USAGE_HW_VIDEO_ENCODER 0x00010000U
+#endif
+
 /*****************************************************************************/
 #include <limits.h>
 #include <unistd.h>
@@ -296,7 +300,8 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
     }
 
     ret = -1;
-    if (usage & (GRALLOC_USAGE_HW_ION | GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_TEXTURE)) {
+    if (usage & (GRALLOC_USAGE_HW_ION | GRALLOC_USAGE_HW_RENDER |
+                 GRALLOC_USAGE_HW_TEXTURE | GRALLOC_USAGE_HW_VIDEO_ENCODER)) {
         ALOGD("%s: Allocating graphicbuffer via ION (size: %d)...", __func__, size);
         priv_alloc_flag = priv_alloc_flag | private_handle_t::PRIV_FLAGS_GRAPHICBUFFER;
         ret = gralloc_alloc_ion(dev, size, usage, format, &ion_fd, &ion_paddr, &priv_alloc_flag, &ump_mem_handle);
@@ -506,7 +511,25 @@ static int alloc_device_alloc(alloc_device_t* dev, int w, int h, int format,
     size_t stride = 0;
     size_t stride_raw = 0;
 
-    if (format == HAL_PIXEL_FORMAT_YCbCr_420_SP ||
+    /*
+     * Camera3 JPEG output uses HAL_PIXEL_FORMAT_BLOB. For gralloc0 the
+     * framework passes the required byte capacity as width and height=1.
+     * The legacy Exynos4 allocator previously rejected this format because
+     * get_bpp() only knows RGB formats, so CameraService could not dequeue a
+     * JPEG output buffer and the capture request never reached take_picture().
+     */
+    if (format == HAL_PIXEL_FORMAT_BLOB) {
+        if (w <= 0 || h != 1) {
+            ALOGE("%s invalid BLOB dimensions %dx%d", __func__, w, h);
+            return -EINVAL;
+        }
+
+        size = static_cast<size_t>(w);
+        stride_raw = static_cast<size_t>(w);
+        stride = static_cast<size_t>(w);
+        ALOGD("%s allocating camera BLOB buffer: %zu bytes", __func__, size);
+    } else if (format == HAL_PIXEL_FORMAT_YCbCr_420_888 ||
+        format == HAL_PIXEL_FORMAT_YCbCr_420_SP ||
         format == HAL_PIXEL_FORMAT_YCrCb_420_SP ||
         format == HAL_PIXEL_FORMAT_YCbCr_422_SP ||
         format == HAL_PIXEL_FORMAT_YCbCr_420_P  ||
@@ -536,6 +559,14 @@ static int alloc_device_alloc(alloc_device_t* dev, int w, int h, int format,
 
         /* FIXME: there is no way to return the vstride */
         int vstride = 0;
+
+        if ((l_usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) &&
+            format == HAL_PIXEL_FORMAT_YCrCb_420_SP) {
+            l_usage |= GRALLOC_USAGE_HW_ION |
+                       GRALLOC_USAGE_PRIVATE_NONECACHE |
+                       GRALLOC_USAGE_SW_WRITE_OFTEN;
+            ALOGD("%s forcing ION NV21 allocation for camera video", __func__);
+        }
 
         stride = EXYNOS4_ALIGN(w, 16);
         vstride = EXYNOS4_ALIGN(h, 16);
@@ -588,6 +619,7 @@ static int alloc_device_alloc(alloc_device_t* dev, int w, int h, int format,
         case 0x215:
         case HAL_PIXEL_FORMAT_CUSTOM_YCrCb_420_SP: //0x111
         case HAL_PIXEL_FORMAT_CUSTOM_YCbCr_420_SP_TILED: //0x112
+        case HAL_PIXEL_FORMAT_YCbCr_420_888: //0x23, stored as contiguous NV21
         case HAL_PIXEL_FORMAT_YCbCr_420_SP: //0x105
         case HAL_PIXEL_FORMAT_YCrCb_420_SP: //0x11
         case HAL_PIXEL_FORMAT_YCbCr_420_P: //0x101

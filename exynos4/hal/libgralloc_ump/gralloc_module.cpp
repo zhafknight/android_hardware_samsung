@@ -716,7 +716,7 @@ int getYUVPlaneInfo(private_handle_t* hnd, struct android_ycbcr* ycbcr)
     // Get the chroma offsets from the handle width/height. We take advantage
     // of the fact the width _is_ the stride
     switch (hnd->format) {
-        //Planar
+        // Planar YV12.
         case HAL_PIXEL_FORMAT_YV12:
             ycbcr->cstride = EXYNOS4_ALIGN(hnd->width, 16) / 2;
             ycbcr->ystride = EXYNOS4_ALIGN(hnd->width, 16);
@@ -724,12 +724,25 @@ int getYUVPlaneInfo(private_handle_t* hnd, struct android_ycbcr* ycbcr)
             ycbcr->cr = (void*)(hnd->base + hnd->uoffset);
             ycbcr->cb = (void*)(hnd->base + hnd->uoffset + hnd->voffset);
             ycbcr->chroma_step = 1;
-        break;
-        default:
-        ALOGD("%s: Invalid format passed: 0x%x", __FUNCTION__,
-                hnd->format);
+            break;
 
-        err = -EINVAL;
+        // The N7000 allocator stores flexible YUV analysis buffers as an
+        // aligned NV21 image: Y followed by interleaved VU chroma.
+        case HAL_PIXEL_FORMAT_YCbCr_420_888:
+        case HAL_PIXEL_FORMAT_YCrCb_420_SP:
+            ycbcr->ystride = hnd->stride > 0
+                    ? hnd->stride : EXYNOS4_ALIGN(hnd->width, 16);
+            ycbcr->cstride = ycbcr->ystride;
+            ycbcr->y = (void*)hnd->base;
+            ycbcr->cr = (void*)(hnd->base + hnd->uoffset);
+            ycbcr->cb = (void*)(hnd->base + hnd->uoffset + 1);
+            ycbcr->chroma_step = 2;
+            break;
+
+        default:
+            ALOGD("%s: Invalid format passed: 0x%x", __FUNCTION__,
+                    hnd->format);
+            err = -EINVAL;
     }
 
     return err;
@@ -1054,7 +1067,7 @@ struct private_module_t HAL_MODULE_INFO_SYM =
         unlock: gralloc_unlock,
 //        getphys: gralloc_getphys,
         perform: gralloc_perform,
-        lock_ycbcr: NULL,
+        lock_ycbcr: gralloc_lock_ycbcr,
     },
     framebuffer: NULL,
     flags: 0,
