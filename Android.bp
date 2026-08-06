@@ -1,4 +1,5 @@
 subdirs = [
+    "ril/libril",
     "exynos4",
     "audio_service",
 ]

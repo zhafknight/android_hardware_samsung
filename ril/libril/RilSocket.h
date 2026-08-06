@@ -16,9 +16,9 @@
 
 #ifndef RIL_SOCKET_H_INCLUDED
 #define RIL_SOCKET_H_INCLUDED
-#include <libril/ril_ex.h>
+#include "ril_ex.h"
 #include "rilSocketQueue.h"
-#include <ril_event.h>
+#include "ril_event.h"
 
 /**
  * Abstract socket class representing sockets in rild.
