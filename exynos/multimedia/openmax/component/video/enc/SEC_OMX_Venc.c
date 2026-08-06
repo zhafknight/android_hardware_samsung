@@ -800,16 +800,58 @@ OMX_BOOL SEC_Preprocessor_InputData(OMX_COMPONENTTYPE *pOMXComponent)
 #ifdef USE_METADATABUFFERTYPE
                     else {
                         if (pSECPort->portDefinition.format.video.eColorFormat == OMX_COLOR_FormatAndroidOpaque) {
+                            OMX_PTR ppBuf[3] = { NULL, NULL, NULL };
+                            OMX_PTR pOutBuffer = NULL;
+                            OMX_U8 *srcY = NULL;
+                            OMX_U8 *srcVU = NULL;
+                            OMX_U8 *dstY = NULL;
+                            OMX_U8 *dstUV = NULL;
+                            OMX_U32 ySize = width * height;
+                            OMX_U32 chromaSize = ySize / 2;
+                            OMX_U32 i = 0;
+                            OMX_ERRORTYPE metadataRet;
+                            OMX_ERRORTYPE lockRet;
 
-                            OMX_PTR ppBuf[3];
-                            OMX_PTR pOutBuffer;
+                            /*
+                             * The N7000 thin Camera3 bridge overrides the encoder
+                             * Surface to HAL_PIXEL_FORMAT_YCrCb_420_SP and writes a
+                             * contiguous NV21 frame. The original Exynos4 code assumes
+                             * every AndroidOpaque buffer is ABGR8888. Calling the ABGR
+                             * NEON converter on NV21 reads beyond the 1.5-Bpp allocation
+                             * and crashes media.codec on the first recording frame.
+                             *
+                             * The legacy MFC encoder consumes NV12 linear input. Copy
+                             * the Y plane and swap each NV21 VU pair into NV12 UV order.
+                             */
+                            metadataRet = SEC_OSAL_GetInfoFromMetaData(inputData, ppBuf);
+                            if ((metadataRet != OMX_ErrorNone) || (ppBuf[0] == NULL)) {
+                                SEC_OSAL_Log(SEC_LOG_ERROR,
+                                             "Failed to obtain opaque NV21 metadata");
+                                SEC_DataReset(pOMXComponent, INPUT_PORT_INDEX);
+                                return OMX_FALSE;
+                            }
 
-                            SEC_OSAL_GetInfoFromMetaData(inputData, ppBuf);
-                            SEC_OSAL_LockANBHandle((OMX_U32)ppBuf[0], width, height, OMX_COLOR_FormatAndroidOpaque, &pOutBuffer);
+                            lockRet = SEC_OSAL_LockANBHandle((OMX_U32)ppBuf[0],
+                                                             width, height,
+                                                             OMX_COLOR_FormatAndroidOpaque,
+                                                             &pOutBuffer);
+                            if ((lockRet != OMX_ErrorNone) || (pOutBuffer == NULL)) {
+                                SEC_OSAL_Log(SEC_LOG_ERROR,
+                                             "Failed to lock opaque NV21 input buffer");
+                                SEC_DataReset(pOMXComponent, INPUT_PORT_INDEX);
+                                return OMX_FALSE;
+                            }
 
-                            csc_ABGR8888_to_YUV420SP_NEON(pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].YVirAddr,
-                                                    pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].CVirAddr,
-                                                    pOutBuffer, width, height);
+                            srcY = (OMX_U8 *)pOutBuffer;
+                            srcVU = srcY + ySize;
+                            dstY = (OMX_U8 *)pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].YVirAddr;
+                            dstUV = (OMX_U8 *)pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].CVirAddr;
+
+                            SEC_OSAL_Memcpy(dstY, srcY, ySize);
+                            for (i = 0; i + 1 < chromaSize; i += 2) {
+                                dstUV[i] = srcVU[i + 1];
+                                dstUV[i + 1] = srcVU[i];
+                            }
 
                             SEC_OSAL_UnlockANBHandle((OMX_U32)ppBuf[0]);
                         }
