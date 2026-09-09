@@ -1,0 +1,4 @@
+filegroup {
+    name: "smdk4210_s5p_jpeg_backend_sources",
+    srcs: ["jpeg_api.c"],
+}
