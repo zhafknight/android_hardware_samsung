@@ -366,6 +366,15 @@ static int gralloc_register_buffer(gralloc_module_t const* module, buffer_handle
 
     /* if this handle was created in this process, then we keep it as is. */
     private_handle_t* hnd = (private_handle_t*)handle;
+    const bool imported = (hnd->pid != getpid());
+
+    if (imported) {
+        hnd->base = 0;
+        hnd->lockState = 0;
+        hnd->writeOwner = 0;
+        hnd->ump_mem_handle = (int)UMP_INVALID_MEMORY_HANDLE;
+        hnd->ion_client = 0;
+    }
 
     ALOGD_IF(debug_level > 1, "%s: ump_id:%d", __func__, hnd->ump_id);
     ALOGD_IF(debug_level > 0, "%s flags=%x", __func__, hnd->flags);
@@ -374,7 +383,7 @@ static int gralloc_register_buffer(gralloc_module_t const* module, buffer_handle
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
         ALOGD_IF(debug_partial_flush > 0,
             "%s: PARTIAL_FLUSH ump_id:%d === BEGIN === ump_mem_handle:%08x flags=%x usage=%x count:%d backingstore:%d",
-            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->backing_store);
+            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->ump_id);
         if (debug_partial_flush > 0)
             dump_rect();
         private_handle_rect *psRect;
@@ -383,13 +392,13 @@ static int gralloc_register_buffer(gralloc_module_t const* module, buffer_handle
         psRect->stride = (int) (hnd->stride * get_bpp(hnd->format));
         ALOGD_IF(debug_partial_flush > 0,
             "%s: PARTIAL_FLUSH ump_id:%d === insert_rect_last === ump_mem_handle:%08x flags=%x usage=%x count:%d backingstore:%d",
-            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->backing_store);
+            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->ump_id);
         insert_rect_last(psRect);
         if (debug_partial_flush > 0)
             dump_rect();
         ALOGD_IF(debug_partial_flush > 0,
             "%s: PARTIAL_FLUSH ump_id:%d === END === ump_mem_handle:%08x flags=%x usage=%x count:%d backingstore:%d",
-            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->backing_store);
+            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->ump_id);
     }
 #endif
 
@@ -428,7 +437,7 @@ sd
         ALOGD_IF(debug_level > 1, "%s: ump_id:%d ump_mem_handle:%08x", __func__, hnd->ump_id, hnd->ump_mem_handle);
 
         hnd->ump_mem_handle = (int)ump_handle_create_from_secure_id(hnd->ump_id);
-        ALOGD_IF(debug_partial_flush > 0, "%s: PARTIAL_FLUSH ump_id:%d ump_mem_handle:%08x flags=%x usage=%x count:%d backing_store:%d", __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->backing_store);
+        ALOGD_IF(debug_partial_flush > 0, "%s: PARTIAL_FLUSH ump_id:%d ump_mem_handle:%08x flags=%x usage=%x count:%d backing_store:%d", __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->ump_id);
 
         ALOGD_IF(debug_level > 0, "%s PRIV_FLAGS_USES_UMP hnd->ump_mem_handle=%d(%x)", __func__, hnd->ump_mem_handle, hnd->ump_mem_handle);
 
@@ -438,7 +447,6 @@ sd
                 /* hnd->lockState = private_handle_t::LOCK_STATE_MAPPED; not in stock */
                 hnd->writeOwner = 0;
                 hnd->lockState = 0;
-
                 pthread_mutex_unlock(&s_map_lock);
                 return 0;
             } else {
@@ -529,13 +537,13 @@ static int unregister_buffer(private_handle_t* hnd) {
     if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) {
         ALOGD_IF(debug_partial_flush > 0,
             "%s: PARTIAL_FLUSH ump_id:%d === BEGIN === ump_mem_handle:%08x flags=%x usage=%x count:%d backingstore:%d",
-            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->backing_store);
+            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->ump_id);
         if (debug_partial_flush > 0)
             dump_rect();
 
         ALOGD_IF(debug_partial_flush > 0,
             "%s: PARTIAL_FLUSH ump_id:%d === release_rect === ump_mem_handle:%08x flags=%x usage=%x count:%d backingstore:%d",
-            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->backing_store);
+            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->ump_id);
         if (!release_rect((int)hnd->ump_id))
             ALOGE("%s: PARTIAL_FLUSH ump_id:%d, release error", __func__, (int)hnd->ump_id);
 
@@ -543,7 +551,7 @@ static int unregister_buffer(private_handle_t* hnd) {
             dump_rect();
         ALOGD_IF(debug_partial_flush > 0,
             "%s: PARTIAL_FLUSH ump_id:%d === END === ump_mem_handle:%08x flags=%x usage=%x count:%d backingstore:%d",
-            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->backing_store);
+            __func__, hnd->ump_id, hnd->ump_mem_handle, hnd->flags, hnd->usage, count_rect(hnd->ump_id), hnd->ump_id);
     }
 #endif
     ALOGE_IF(hnd->lockState & private_handle_t::LOCK_STATE_READ_MASK,
@@ -637,10 +645,10 @@ static private_handle_t* clone_private_handle(private_handle_t* hnd) {
     result->uoffset = hnd->uoffset;
     result->voffset = hnd->voffset;
     result->ion_client = hnd->ion_client;
-    result->ion_memory = hnd->ion_memory;
-    result->backing_store = hnd->backing_store;
-    result->producer_usage = hnd->producer_usage;
-    result->consumer_usage = hnd->consumer_usage;
+    result->ion_memory = NULL;
+    result->backing_store = (uint32_t)hnd->ump_id;
+    result->producer_usage = (uint32_t)hnd->usage;
+    result->consumer_usage = (uint32_t)hnd->usage;
     return result;
 }
 
@@ -726,7 +734,7 @@ int getYUVPlaneInfo(private_handle_t* hnd, struct android_ycbcr* ycbcr)
             ycbcr->chroma_step = 1;
             break;
 
-        // The N7000 allocator stores flexible YUV analysis buffers as an
+        // The Exynos4 allocator stores flexible YUV analysis buffers as an
         // aligned NV21 image: Y followed by interleaved VU chroma.
         case HAL_PIXEL_FORMAT_YCbCr_420_888:
         case HAL_PIXEL_FORMAT_YCrCb_420_SP:
@@ -911,17 +919,22 @@ static int gralloc_perform(struct gralloc_module_t const* module,
         case GRALLOC1_ADAPTER_PERFORM_GET_REAL_MODULE_API_VERSION_MINOR:
             {
                 auto outMinorVersion = va_arg(args, int*);
+                if (outMinorVersion == NULL)
+                    break;
                 *outMinorVersion = 0;
+                res = 0;
                 ALOGV("%s: GRALLOC1_ADAPTER_PERFORM_GET_REAL_MODULE_API_VERSION_MINOR %d",
                     __func__, *outMinorVersion);
             } break;
         case GRALLOC1_ADAPTER_PERFORM_SET_USAGES:
             {
                 auto hnd =  va_arg(args, private_handle_t*);
-                auto producerUsage = va_arg(args, uint64_t);
-                auto consumerUsage = va_arg(args, uint64_t);
-                hnd->producer_usage = producerUsage;
-                hnd->consumer_usage = consumerUsage;
+                auto producerUsage = va_arg(args, int);
+                auto consumerUsage = va_arg(args, int);
+                if (private_handle_t::validate(hnd) < 0)
+                    break;
+                hnd->usage = producerUsage | consumerUsage;
+                res = 0;
                 ALOGV("%s: (%p) GRALLOC1_ADAPTER_PERFORM_SET_USAGES p:0x%08x c:0x%08x", __func__,
                     hnd, producerUsage, consumerUsage);
             } break;
@@ -931,8 +944,12 @@ static int gralloc_perform(struct gralloc_module_t const* module,
                 auto hnd =  va_arg(args, private_handle_t*);
                 auto outWidth = va_arg(args, int*);
                 auto outHeight = va_arg(args, int*);
+                if (private_handle_t::validate(hnd) < 0 ||
+                    outWidth == NULL || outHeight == NULL)
+                    break;
                 *outWidth = hnd->width;
                 *outHeight = hnd->height;
+                res = 0;
                 ALOGV("%s: (%p) GRALLOC1_ADAPTER_PERFORM_GET_DIMENSIONS %d x %d", __func__,
                     hnd, *outWidth, *outHeight);
             } break;
@@ -941,7 +958,10 @@ static int gralloc_perform(struct gralloc_module_t const* module,
             {
                 auto hnd =  va_arg(args, private_handle_t*);
                 auto outFormat = va_arg(args, int*);
+                if (private_handle_t::validate(hnd) < 0 || outFormat == NULL)
+                    break;
                 *outFormat = hnd->format;
+                res = 0;
                 ALOGV("%s: (%p) GRALLOC1_ADAPTER_PERFORM_GET_FORMAT %d", __func__,
                     hnd, *outFormat);
             } break;
@@ -949,25 +969,39 @@ static int gralloc_perform(struct gralloc_module_t const* module,
         case GRALLOC1_ADAPTER_PERFORM_GET_PRODUCER_USAGE:
             {
                 auto hnd =  va_arg(args, private_handle_t*);
-                auto outUsage = va_arg(args, uint64_t*);
-                *outUsage = hnd->producer_usage;
+                auto outUsage = va_arg(args, int*);
+                if (private_handle_t::validate(hnd) < 0 || outUsage == NULL)
+                    break;
+                *outUsage = hnd->usage;
+                res = 0;
                 ALOGV("%s: (%p) GRALLOC1_ADAPTER_PERFORM_GET_PRODUCER_USAGE 0x%08x", __func__,
-                    hnd, hnd->producer_usage);
+                    hnd, *outUsage);
             } break;
         case GRALLOC1_ADAPTER_PERFORM_GET_CONSUMER_USAGE:
             {
                 auto hnd =  va_arg(args, private_handle_t*);
-                auto outUsage = va_arg(args, uint64_t*);
-                *outUsage = hnd->consumer_usage;
+                auto outUsage = va_arg(args, int*);
+                if (private_handle_t::validate(hnd) < 0 || outUsage == NULL)
+                    break;
+                *outUsage = hnd->usage;
+                res = 0;
                 ALOGV("%s: (%p) GRALLOC1_ADAPTER_PERFORM_GET_CONSUMER_USAGE 0x%08x", __func__,
-                    hnd, hnd->consumer_usage);
+                    hnd, *outUsage);
             } break;
 
         case GRALLOC1_ADAPTER_PERFORM_GET_BACKING_STORE:
             {
                 auto hnd =  va_arg(args, private_handle_t*);
                 auto outBackingStore = va_arg(args, uint64_t*);
-                *outBackingStore = hnd->backing_store;
+                if (private_handle_t::validate(hnd) < 0 ||
+                    outBackingStore == NULL)
+                    break;
+                if ((hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP) &&
+                    hnd->ump_id != (int)UMP_INVALID_SECURE_ID)
+                    *outBackingStore = (uint32_t)hnd->ump_id;
+                else
+                    *outBackingStore = (uint32_t)hnd->paddr;
+                res = 0;
                 ALOGV("%s: (%p) GRALLOC1_ADAPTER_PERFORM_GET_BACKING_STORE %llu", __func__,
                     hnd, *outBackingStore);
             } break;
@@ -977,9 +1011,12 @@ static int gralloc_perform(struct gralloc_module_t const* module,
                 auto hnd =  va_arg(args, private_handle_t*);
                 auto outNumFlexPlanes = va_arg(args, int*);
 
-                (void) hnd;
+                if (private_handle_t::validate(hnd) < 0 ||
+                    outNumFlexPlanes == NULL)
+                    break;
                 // for simpilicity
                 *outNumFlexPlanes = 4;
+                res = 0;
                 ALOGV("%s: (%p) GRALLOC1_ADAPTER_PERFORM_GET_NUM_FLEX_PLANES %d", __func__,
                     hnd, *outNumFlexPlanes);
             } break;
@@ -988,7 +1025,10 @@ static int gralloc_perform(struct gralloc_module_t const* module,
             {
                 auto hnd =  va_arg(args, private_handle_t*);
                 auto outStride = va_arg(args, int*);
+                if (private_handle_t::validate(hnd) < 0 || outStride == NULL)
+                    break;
                 *outStride = hnd->width;
+                res = 0;
                 ALOGV("%s: (%p) GRALLOC1_ADAPTER_PERFORM_GET_STRIDE %d", __func__,
                     hnd, *outStride);
             } break;
@@ -1005,6 +1045,9 @@ static int gralloc_perform(struct gralloc_module_t const* module,
                 auto acquireFence = va_arg(args, int);
                 (void) acquireFence;
 
+                if (private_handle_t::validate(hnd) < 0 || outLayout == NULL)
+                    break;
+
                 ALOGV("%s: (%p) GRALLOC1_ADAPTER_PERFORM_LOCK_FLEX", __func__, hnd);
 
                 struct android_ycbcr ycbcr;
@@ -1012,7 +1055,7 @@ static int gralloc_perform(struct gralloc_module_t const* module,
                         producerUsage | consumerUsage,
                         left, top, width, height, &ycbcr);
                 if (res != 0) {
-                    return res;
+                    break;
                 }
 
                 ycbcr_to_flexible_layout(&ycbcr, outLayout);

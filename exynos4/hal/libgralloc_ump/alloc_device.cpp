@@ -231,6 +231,7 @@ static int gralloc_alloc_ion(alloc_device_t *dev, size_t size, int usage,
 							 int format, ion_buffer *ion_fd, ion_phys_addr_t *ion_paddr,
 							 int *priv_alloc_flag, ump_handle *ump_mem_handle) {
 	unsigned int ion_flags = 0;
+	unsigned int ion_alignment = 0;
 	private_module_t* m;
 
     if (!ion_dev_open) {
@@ -258,7 +259,12 @@ static int gralloc_alloc_ion(alloc_device_t *dev, size_t size, int usage,
         ion_flags = ION_HEAP_EXYNOS_CONTIG_MASK;
     }
 
-    *ion_fd = ion_alloc(m->ion_client, size, 0, ion_flags);
+    if ((usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) &&
+        (format == HAL_PIXEL_FORMAT_YCbCr_420_SP ||
+         format == HAL_PIXEL_FORMAT_YCrCb_420_SP))
+        ion_alignment = 64 * 1024;
+
+    *ion_fd = ion_alloc(m->ion_client, size, ion_alignment, ion_flags);
     if (*ion_fd < 0) {
         ALOGE("%s Failed to ion_alloc", __func__);
         return -1;
@@ -371,7 +377,18 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
                     hnd->height = h;
                     hnd->bpp = bpp;
                     hnd->stride = stride;
-                    hnd->uoffset = ((EXYNOS4_ALIGN(hnd->width, 16) * EXYNOS4_ALIGN(hnd->height, 16)));
+                    if ((usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) &&
+                        (format == HAL_PIXEL_FORMAT_YCbCr_420_SP ||
+                         format == HAL_PIXEL_FORMAT_YCrCb_420_SP)) {
+                        hnd->uoffset = round_up_to_page_size(
+                                static_cast<size_t>(hnd->width) * hnd->height);
+                    } else if (format == HAL_PIXEL_FORMAT_YCrCb_420_SP) {
+                        hnd->uoffset = EXYNOS4_ALIGN(hnd->width, 16) *
+                                hnd->height;
+                    } else {
+                        hnd->uoffset = (EXYNOS4_ALIGN(hnd->width, 16) *
+                                        EXYNOS4_ALIGN(hnd->height, 16));
+                    }
                     hnd->voffset = ((EXYNOS4_ALIGN((hnd->width / 2), 16) * EXYNOS4_ALIGN((hnd->height / 2), 16)));
                     hnd->paddr = ion_paddr;
                     if (ion_fd >= 0)
@@ -507,6 +524,15 @@ static int alloc_device_alloc(alloc_device_t* dev, int w, int h, int format,
 
     ALOGD_IF(debug_level > 0, "%s w=%d h=%d format=0x%x usage=0x%x", __func__, w, h, format, usage);
 
+    if (format == HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED &&
+        (l_usage & GRALLOC_USAGE_HW_CAMERA_WRITE)) {
+        const bool encoder = (l_usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) != 0;
+        format = encoder ? HAL_PIXEL_FORMAT_YCbCr_420_SP
+                         : HAL_PIXEL_FORMAT_YCrCb_420_SP;
+        ALOGI("%s resolving camera IMPLEMENTATION_DEFINED %dx%d usage=0x%x to %s",
+              __func__, w, h, l_usage, encoder ? "NV12" : "NV21");
+    }
+
     size_t size = 0;
     size_t stride = 0;
     size_t stride_raw = 0;
@@ -560,12 +586,18 @@ static int alloc_device_alloc(alloc_device_t* dev, int w, int h, int format,
         /* FIXME: there is no way to return the vstride */
         int vstride = 0;
 
-        if ((l_usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) &&
-            format == HAL_PIXEL_FORMAT_YCrCb_420_SP) {
+        const bool encoderYuv =
+                (l_usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) &&
+                (format == HAL_PIXEL_FORMAT_YCbCr_420_SP ||
+                 format == HAL_PIXEL_FORMAT_YCrCb_420_SP);
+        if (encoderYuv) {
             l_usage |= GRALLOC_USAGE_HW_ION |
-                       GRALLOC_USAGE_PRIVATE_NONECACHE |
-                       GRALLOC_USAGE_SW_WRITE_OFTEN;
-            ALOGD("%s forcing ION NV21 allocation for camera video", __func__);
+                       GRALLOC_USAGE_PRIVATE_NONECACHE;
+            l_usage &= ~(GRALLOC_USAGE_SW_READ_MASK |
+                         GRALLOC_USAGE_SW_WRITE_MASK);
+            ALOGD("%s using MFC-aligned non-cacheable ION %s for camera video",
+                  __func__, format == HAL_PIXEL_FORMAT_YCbCr_420_SP
+                          ? "NV12" : "NV21");
         }
 
         stride = EXYNOS4_ALIGN(w, 16);
@@ -585,12 +617,12 @@ static int alloc_device_alloc(alloc_device_t* dev, int w, int h, int format,
                 ALOGD("%s added usage GRALLOC_USAGE_HW_ION because of format\n", __func__);
             }
 
-            if (!(l_usage & GRALLOC_USAGE_PRIVATE_NONECACHE)) {
+            if (!encoderYuv && !(l_usage & GRALLOC_USAGE_PRIVATE_NONECACHE)) {
                 l_usage |= GRALLOC_USAGE_PRIVATE_NONECACHE; // Exynos HWC wants ION-friendly memory allocation
                 ALOGD("%s added usage GRALLOC_USAGE_PRIVATE_NONECACHE because of format\n", __func__);
             }
 
-            if (!(l_usage & GRALLOC_USAGE_SW_WRITE_OFTEN)) {
+            if (!encoderYuv && !(l_usage & GRALLOC_USAGE_SW_WRITE_OFTEN)) {
                 l_usage |= GRALLOC_USAGE_SW_WRITE_OFTEN; // Exynos HWC wants ION-friendly memory allocation
                 ALOGD("%s added usage GRALLOC_USAGE_SW_WRITE_OFTEN because of format\n", __func__);
             }
