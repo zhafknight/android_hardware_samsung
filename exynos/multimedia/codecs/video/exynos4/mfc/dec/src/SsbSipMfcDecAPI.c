@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -307,7 +308,9 @@ retry:
             usleep(100000);
             goto retry;
         }
-        ALOGE("SsbSipMfcDecInit] IOCTL_MFC_DEC_INIT failed");
+        ALOGE("SsbSipMfcDecInit] IOCTL_MFC_DEC_INIT failed "
+              "(ioctl=%d, ret_code=%d, errno=%d:%s, attempts=4)",
+              r, DecArg.ret_code, errno, strerror(errno));
         return MFC_RET_DEC_INIT_FAIL;
     }
 
