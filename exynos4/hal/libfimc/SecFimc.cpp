@@ -38,6 +38,7 @@
 //#define DEBUG_LIB_FIMC
 struct yuv_fmt_list yuv_list[] = {
     { "V4L2_PIX_FMT_NV12",      "YUV420/2P/LSB_CBCR",   V4L2_PIX_FMT_NV12,      12, 2 },
+    { "V4L2_PIX_FMT_NV12M",     "YUV420/2P/LSB_CBCR",   V4L2_PIX_FMT_NV12M,     12, 2 },
     { "V4L2_PIX_FMT_NV12T",     "YUV420/2P/LSB_CBCR",   V4L2_PIX_FMT_NV12T,     12, 2 },
     { "V4L2_PIX_FMT_NV21",      "YUV420/2P/LSB_CRCB",   V4L2_PIX_FMT_NV21,      12, 2 },
     { "V4L2_PIX_FMT_NV21X",     "YUV420/2P/MSB_CBCR",   V4L2_PIX_FMT_NV21X,     12, 2 },
@@ -436,6 +437,10 @@ int fimc_switch_color_format(int color_space)
             break;
 
         case HAL_PIXEL_FORMAT_YCbCr_420_SP:
+            return V4L2_PIX_FMT_NV12;
+            break;
+
+        case HAL_PIXEL_FORMAT_YCrCb_420_SP:
             return V4L2_PIX_FMT_NV21;
             break;
 
@@ -474,6 +479,8 @@ int fimc_switch_color_format(int color_space)
         case V4L2_PIX_FMT_RGB32:
         case V4L2_PIX_FMT_RGB565:
         case V4L2_PIX_FMT_NV61:
+        case V4L2_PIX_FMT_NV12:
+        case V4L2_PIX_FMT_NV12M:
         case V4L2_PIX_FMT_NV21:
         case V4L2_PIX_FMT_YUV422P:
         case V4L2_PIX_FMT_YUV420:
@@ -625,6 +632,11 @@ bool SecFimc::create(FIMC_DEV fimc_dev,
         return false;
     }
 
+    if (vc.value < 0) {
+        ALOGI("%s:: no reserved output memory (%d); using external DMA buffers\n",
+              __func__, vc.value);
+        vc.value = 0;
+    }
     mFimcRrvedPhysMemAddr = (unsigned int)vc.value;
     ALOGI("%s:: Fimc reserved memory =0x%8x\n", __func__, mFimcRrvedPhysMemAddr);
     mS5pFimc.out_buf.phys_addr = (void *)mFimcRrvedPhysMemAddr;
@@ -663,10 +675,18 @@ bool SecFimc::destroy()
 #ifdef DEBUG_LIB_FIMC
     ALOGD("%s", __func__);
 #endif
+    bool success = true;
+
+    if(mFlagStreamOn == true && streamOff() == false)
+    {
+        ALOGE("%s :: streamOff() fail", __func__);
+        success = false;
+    }
+
     if(fimc_v4l2_clr_buf(mS5pFimc.dev_fd) < 0)
     {
         ALOGE("%s :: fimc_v4l2_clr_buf() fail", __func__);
-        return false;
+        success = false;
     }
 
     if(mS5pFimc.out_buf.phys_addr != NULL) {
@@ -679,8 +699,9 @@ bool SecFimc::destroy()
         close(mS5pFimc.dev_fd);
 
     mFlagCreate = false;
+    mFlagStreamOn = false;
 
-    return true;
+    return success;
 }
 
 bool SecFimc::flagCreate()
@@ -802,6 +823,7 @@ bool SecFimc::checkFimcDstSize(unsigned int width, unsigned int height,
     switch(colorFormat) {
         case V4L2_PIX_FMT_NV21:
         case V4L2_PIX_FMT_NV12:
+        case V4L2_PIX_FMT_NV12M:
         case V4L2_PIX_FMT_NV12T:
         case V4L2_PIX_FMT_YUV420:
             if(*rotCropHeight % 2 != 0)
@@ -1070,11 +1092,15 @@ bool SecFimc::setDstParams(unsigned int width, unsigned int height,
 #ifdef DEBUG_LIB_FIMC
     ALOGD("fimc_v4l2_set_dst is called");
 #endif
-    if(fimc_v4l2_set_dst(mS5pFimc.dev_fd, &(params->dst), 
-                mRotVal, (unsigned int)mS5pFimc.out_buf.phys_addr) < 0)
-    {
-        ALOGE("%s :: fimc_v4l2_set_dst", __func__);
-        return false;
+    if (mS5pFimc.out_buf.phys_addr != NULL) {
+        if(fimc_v4l2_set_dst(mS5pFimc.dev_fd, &(params->dst),
+                    mRotVal, (unsigned int)mS5pFimc.out_buf.phys_addr) < 0)
+        {
+            ALOGE("%s :: fimc_v4l2_set_dst", __func__);
+            return false;
+        }
+    } else {
+        ALOGI("%s:: deferring destination setup until external DMA address", __func__);
     }
 
     *cropWidth  = fimcWidth;
@@ -1138,7 +1164,22 @@ bool SecFimc::setDstPhyAddr(unsigned int physYAddr, unsigned int physCbAddr, uns
     ALOGD("%s:: fd = %d", __func__, (int)mS5pFimc.dev_fd);
     ALOGD("fimc_v4l2_set_dst is called");
 #endif
-    if(fimc_v4l2_set_dst(mS5pFimc.dev_fd, &(params->dst), mRotVal, 
+    if(mFlagStreamOn == true)
+    {
+        memset(&fbuf, 0, sizeof(fbuf));
+        if(ioctl(mS5pFimc.dev_fd, VIDIOC_G_FBUF, &fbuf) < 0)
+        {
+            ALOGE("%s :: VIDIOC_G_FBUF fail", __func__);
+            return false;
+        }
+        fbuf.base = mS5pFimc.out_buf.phys_addr;
+        if(ioctl(mS5pFimc.dev_fd, VIDIOC_S_FBUF, &fbuf) < 0)
+        {
+            ALOGE("%s :: VIDIOC_S_FBUF address update fail", __func__);
+            return false;
+        }
+    }
+    else if(fimc_v4l2_set_dst(mS5pFimc.dev_fd, &(params->dst), mRotVal,
                 (unsigned int)mS5pFimc.out_buf.phys_addr) < 0)
     {
         ALOGE("%s :: fimc_v4l2_set_dst", __func__);
@@ -1522,6 +1563,7 @@ bool SecFimc::handleOneShot()
     }
     s5p_fimc_params_t* params = &(mS5pFimc.params);
     struct fimc_buf fimc_src_buf;
+    bool success = true;
 
     if(mFlagSetSrcParam == false)
     {
@@ -1547,12 +1589,14 @@ bool SecFimc::handleOneShot()
     if(fimc_v4l2_queue(mS5pFimc.dev_fd, &fimc_src_buf, 0) < 0)
     {
         ALOGE("%s :: fimc_v4l2_queue(index : %d) (mBufNum : %d) fail", __func__, 0, mBufNum);
+        success = false;
         goto STREAMOFF;
     }
 
     if(fimc_v4l2_dequeue(mS5pFimc.dev_fd) < 0)
     {
         ALOGE("%s :: fimc_v4l2_dequeue (mBufNum : %d) fail", __func__, mBufNum);
+        success = false;
         goto STREAMOFF;
     }
 
@@ -1564,7 +1608,7 @@ STREAMOFF:
         return false;
     }
 
-    return true;
+    return success;
 }
 
 int SecFimc::m_widthOfFimc(int fimc_color_format, int width)
@@ -1581,6 +1625,7 @@ int SecFimc::m_widthOfFimc(int fimc_color_format, int width)
             /* 420 2/3 plane */
         case V4L2_PIX_FMT_NV21:
         case V4L2_PIX_FMT_NV12:
+        case V4L2_PIX_FMT_NV12M:
         case V4L2_PIX_FMT_NV12T:
         case V4L2_PIX_FMT_YUV420:
             return multipleOf2(width);
@@ -1609,6 +1654,7 @@ int SecFimc::m_widthOfFimc(int fimc_color_format, int width)
 
         case V4L2_PIX_FMT_NV21:
         case V4L2_PIX_FMT_NV12:
+        case V4L2_PIX_FMT_NV12M:
         case V4L2_PIX_FMT_NV12T:
             return multipleOf8(width);
 
@@ -1627,6 +1673,7 @@ int SecFimc::m_heightOfFimc(int fimc_color_format, int height)
     switch(fimc_color_format) {
         case V4L2_PIX_FMT_NV21:
         case V4L2_PIX_FMT_NV12:
+        case V4L2_PIX_FMT_NV12M:
         case V4L2_PIX_FMT_NV12T:
         case V4L2_PIX_FMT_YUV420:
             return multipleOf2(height);
