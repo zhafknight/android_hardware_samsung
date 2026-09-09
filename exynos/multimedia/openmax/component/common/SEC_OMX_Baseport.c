@@ -109,6 +109,9 @@ OMX_ERRORTYPE SEC_OMX_FlushPort(OMX_COMPONENTTYPE *pOMXComponent, OMX_S32 portIn
         }
     }
 
+    if (pSECComponent->sec_BufferReset != NULL)
+        pSECComponent->sec_BufferReset(pOMXComponent, portIndex);
+
     if (CHECK_PORT_TUNNELED(pSECPort) && CHECK_PORT_BUFFER_SUPPLIER(pSECPort)) {
         while (SEC_OSAL_GetElemNum(&pSECPort->bufferQ) < (int)pSECPort->assignedBufferNum) {
             SEC_OSAL_SemaphoreWait(pSECComponent->pSECPort[portIndex].bufferSemID);

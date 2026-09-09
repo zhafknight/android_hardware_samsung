@@ -94,6 +94,10 @@ typedef struct _SEC_OMX_VIDEOENC_COMPONENT
     OMX_VIDEO_PARAM_QUANTIZATIONTYPE quantization;
     OMX_VIDEO_PARAM_INTRAREFRESHTYPE intraRefresh;
     OMX_BOOL bFirstFrame;
+    OMX_BOOL bNativeInputCapable;
+    OMX_BOOL bCurrentInputNative;
+    OMX_BOOL bNativeInputLogged;
+    OMX_BUFFERHEADERTYPE *pNativePendingInputBuffer;
     MFC_ENC_INPUT_BUFFER MFCEncInputBuffer[MFC_INPUT_BUFFER_NUM_MAX];
     OMX_U32  indexInputBuffer;
 } SEC_OMX_VIDEOENC_COMPONENT;
@@ -156,6 +160,9 @@ OMX_ERRORTYPE SEC_OMX_VideoEncodeComponentInit(OMX_IN OMX_HANDLETYPE hComponent)
 OMX_ERRORTYPE SEC_OMX_VideoEncodeComponentDeinit(OMX_IN OMX_HANDLETYPE hComponent);
 OMX_BOOL SEC_Check_BufferProcess_State(SEC_OMX_BASECOMPONENT *pSECComponent);
 void SEC_UpdateFrameSize(OMX_COMPONENTTYPE *pOMXComponent);
+OMX_ERRORTYPE SEC_OMX_InputBufferReturnDirect(
+    OMX_COMPONENTTYPE *pOMXComponent,
+    OMX_BUFFERHEADERTYPE *bufferHeader);
 
 #ifdef __cplusplus
 }

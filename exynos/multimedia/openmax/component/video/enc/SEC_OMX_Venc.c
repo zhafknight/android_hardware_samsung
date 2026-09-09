@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include "SEC_OMX_Macros.h"
 #include "SEC_OSAL_Event.h"
 #include "SEC_OMX_Venc.h"
@@ -37,6 +38,8 @@
 #include "SEC_OSAL_Semaphore.h"
 #include "SEC_OSAL_ETC.h"
 #include "color_space_convertor.h"
+
+#define SEC_OMX_ANDROID_PRIORITY_VIDEO (-10)
 
 #ifdef USE_STOREMETADATA
 #include "SEC_OSAL_Android.h"
@@ -403,14 +406,14 @@ OMX_BOOL SEC_Check_BufferProcess_State(SEC_OMX_BASECOMPONENT *pSECComponent)
         return OMX_FALSE;
 }
 
-static OMX_ERRORTYPE SEC_InputBufferReturn(OMX_COMPONENTTYPE *pOMXComponent)
+OMX_ERRORTYPE SEC_OMX_InputBufferReturnDirect(
+    OMX_COMPONENTTYPE *pOMXComponent,
+    OMX_BUFFERHEADERTYPE *bufferHeader)
 {
     OMX_ERRORTYPE          ret = OMX_ErrorNone;
     SEC_OMX_BASECOMPONENT *pSECComponent = (SEC_OMX_BASECOMPONENT *)pOMXComponent->pComponentPrivate;
     SEC_OMX_BASEPORT      *secOMXInputPort = &pSECComponent->pSECPort[INPUT_PORT_INDEX];
     SEC_OMX_BASEPORT      *secOMXOutputPort = &pSECComponent->pSECPort[OUTPUT_PORT_INDEX];
-    SEC_OMX_DATABUFFER    *dataBuffer = &pSECComponent->secDataBuffer[INPUT_PORT_INDEX];
-    OMX_BUFFERHEADERTYPE  *bufferHeader = dataBuffer->bufferHeader;
 
     FunctionIn();
 
@@ -447,6 +450,23 @@ static OMX_ERRORTYPE SEC_InputBufferReturn(OMX_COMPONENTTYPE *pOMXComponent)
         SEC_OSAL_SignalWait(pSECComponent->pauseEvent, DEF_MAX_WAIT_TIME);
         SEC_OSAL_SignalReset(pSECComponent->pauseEvent);
     }
+
+EXIT:
+    FunctionOut();
+
+    return ret;
+}
+
+static OMX_ERRORTYPE SEC_InputBufferReturn(OMX_COMPONENTTYPE *pOMXComponent)
+{
+    OMX_ERRORTYPE          ret = OMX_ErrorNone;
+    SEC_OMX_BASECOMPONENT *pSECComponent = (SEC_OMX_BASECOMPONENT *)pOMXComponent->pComponentPrivate;
+    SEC_OMX_DATABUFFER    *dataBuffer = &pSECComponent->secDataBuffer[INPUT_PORT_INDEX];
+
+    FunctionIn();
+
+    ret = SEC_OMX_InputBufferReturnDirect(pOMXComponent,
+                                           dataBuffer->bufferHeader);
 
     dataBuffer->dataValid     = OMX_FALSE;
     dataBuffer->dataLen       = 0;
@@ -621,9 +641,24 @@ static OMX_ERRORTYPE SEC_BufferReset(OMX_COMPONENTTYPE *pOMXComponent, OMX_U32 p
 {
     OMX_ERRORTYPE          ret = OMX_ErrorNone;
     SEC_OMX_BASECOMPONENT *pSECComponent = (SEC_OMX_BASECOMPONENT *)pOMXComponent->pComponentPrivate;
+    SEC_OMX_VIDEOENC_COMPONENT *pVideoEnc =
+            (SEC_OMX_VIDEOENC_COMPONENT *)pSECComponent->hComponentHandle;
     /* SEC_OMX_BASEPORT      *pSECPort = &pSECComponent->pSECPort[portIndex]; */
     SEC_OMX_DATABUFFER    *dataBuffer = &pSECComponent->secDataBuffer[portIndex];
     /* OMX_BUFFERHEADERTYPE  *bufferHeader = dataBuffer->bufferHeader; */
+
+    if (portIndex == INPUT_PORT_INDEX && pVideoEnc != NULL &&
+        pVideoEnc->pNativePendingInputBuffer != NULL) {
+        OMX_BUFFERHEADERTYPE *pendingBuffer =
+                pVideoEnc->pNativePendingInputBuffer;
+
+        if (pVideoEnc->NBEncThread.bEncoderRun != OMX_FALSE) {
+            SEC_OSAL_SemaphoreWait(pVideoEnc->NBEncThread.hEncFrameEnd);
+            pVideoEnc->NBEncThread.bEncoderRun = OMX_FALSE;
+        }
+        pVideoEnc->pNativePendingInputBuffer = NULL;
+        SEC_OMX_InputBufferReturnDirect(pOMXComponent, pendingBuffer);
+    }
 
     dataBuffer->dataValid     = OMX_FALSE;
     dataBuffer->dataLen       = 0;
@@ -670,6 +705,18 @@ OMX_BOOL SEC_Preprocessor_InputData(OMX_COMPONENTTYPE *pOMXComponent)
     OMX_BOOL               previousFrameEOF = OMX_FALSE;
 
     if (inputUseBuffer->dataValid == OMX_TRUE) {
+        if (inputUseBuffer->bufferHeader == NULL) {
+            SEC_OSAL_Log(SEC_LOG_ERROR,
+                         "Invalid OMX input ownership state: valid buffer has no header");
+            inputUseBuffer->dataValid = OMX_FALSE;
+            inputUseBuffer->dataLen = 0;
+            inputUseBuffer->remainDataLen = 0;
+            inputUseBuffer->usedDataLen = 0;
+            inputUseBuffer->nFlags = 0;
+            inputUseBuffer->timeStamp = 0;
+            SEC_DataReset(pOMXComponent, INPUT_PORT_INDEX);
+            return OMX_FALSE;
+        }
         checkInputStream = inputUseBuffer->bufferHeader->pBuffer + inputUseBuffer->usedDataLen;
         checkInputStreamLen = inputUseBuffer->remainDataLen;
 
@@ -680,6 +727,7 @@ OMX_BOOL SEC_Preprocessor_InputData(OMX_COMPONENTTYPE *pOMXComponent)
 
         if (inputData->dataLen == 0) {
             previousFrameEOF = OMX_TRUE;
+            pVideoEnc->bCurrentInputNative = OMX_FALSE;
         } else {
             previousFrameEOF = OMX_FALSE;
         }
@@ -801,59 +849,99 @@ OMX_BOOL SEC_Preprocessor_InputData(OMX_COMPONENTTYPE *pOMXComponent)
                     else {
                         if (pSECPort->portDefinition.format.video.eColorFormat == OMX_COLOR_FormatAndroidOpaque) {
                             OMX_PTR ppBuf[3] = { NULL, NULL, NULL };
+                            OMX_PTR physBuf[2] = { NULL, NULL };
                             OMX_PTR pOutBuffer = NULL;
                             OMX_U8 *srcY = NULL;
-                            OMX_U8 *srcVU = NULL;
+                            OMX_U8 *srcChroma = NULL;
                             OMX_U8 *dstY = NULL;
                             OMX_U8 *dstUV = NULL;
                             OMX_U32 ySize = width * height;
                             OMX_U32 chromaSize = ySize / 2;
                             OMX_U32 i = 0;
+                            SEC_OSAL_ANB_FORMATTYPE anbFormat =
+                                    SEC_OSAL_ANB_FORMAT_UNKNOWN;
                             OMX_ERRORTYPE metadataRet;
+                            OMX_ERRORTYPE formatRet;
+                            OMX_ERRORTYPE physRet;
                             OMX_ERRORTYPE lockRet;
 
-                            /*
-                             * The N7000 thin Camera3 bridge overrides the encoder
-                             * Surface to HAL_PIXEL_FORMAT_YCrCb_420_SP and writes a
-                             * contiguous NV21 frame. The original Exynos4 code assumes
-                             * every AndroidOpaque buffer is ABGR8888. Calling the ABGR
-                             * NEON converter on NV21 reads beyond the 1.5-Bpp allocation
-                             * and crashes media.codec on the first recording frame.
-                             *
-                             * The legacy MFC encoder consumes NV12 linear input. Copy
-                             * the Y plane and swap each NV21 VU pair into NV12 UV order.
-                             */
                             metadataRet = SEC_OSAL_GetInfoFromMetaData(inputData, ppBuf);
                             if ((metadataRet != OMX_ErrorNone) || (ppBuf[0] == NULL)) {
                                 SEC_OSAL_Log(SEC_LOG_ERROR,
-                                             "Failed to obtain opaque NV21 metadata");
+                                             "Failed to obtain opaque input metadata");
                                 SEC_DataReset(pOMXComponent, INPUT_PORT_INDEX);
                                 return OMX_FALSE;
                             }
 
-                            lockRet = SEC_OSAL_LockANBHandle((OMX_U32)ppBuf[0],
-                                                             width, height,
-                                                             OMX_COLOR_FormatAndroidOpaque,
-                                                             &pOutBuffer);
-                            if ((lockRet != OMX_ErrorNone) || (pOutBuffer == NULL)) {
+                            formatRet = SEC_OSAL_GetANBFormatHandle(
+                                    (OMX_U32)ppBuf[0], &anbFormat);
+                            if (formatRet != OMX_ErrorNone) {
                                 SEC_OSAL_Log(SEC_LOG_ERROR,
-                                             "Failed to lock opaque NV21 input buffer");
+                                             "Unsupported opaque input buffer format");
                                 SEC_DataReset(pOMXComponent, INPUT_PORT_INDEX);
                                 return OMX_FALSE;
                             }
 
-                            srcY = (OMX_U8 *)pOutBuffer;
-                            srcVU = srcY + ySize;
-                            dstY = (OMX_U8 *)pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].YVirAddr;
-                            dstUV = (OMX_U8 *)pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].CVirAddr;
+                            physRet = SEC_OSAL_GetPhysANBHandle(
+                                    (OMX_U32)ppBuf[0], physBuf);
+                            if (pVideoEnc->bNativeInputCapable == OMX_TRUE &&
+                                anbFormat == SEC_OSAL_ANB_FORMAT_NV12 &&
+                                physRet == OMX_ErrorNone &&
+                                physBuf[0] != NULL && physBuf[1] != NULL &&
+                                (((OMX_U32)physBuf[0] & 0xffff) == 0) &&
+                                (((OMX_U32)physBuf[1] & 0x7ff) == 0)) {
+                                pVideoEnc->bCurrentInputNative = OMX_TRUE;
+                                if (pVideoEnc->bNativeInputLogged == OMX_FALSE) {
+                                    _SEC_OSAL_Log(SEC_LOG_WARNING, SEC_LOG_TAG,
+                                                  "Using native NV12 physical input for Exynos4 MFC");
+                                    pVideoEnc->bNativeInputLogged = OMX_TRUE;
+                                }
+                            } else {
+                                lockRet = SEC_OSAL_LockANBHandle(
+                                        (OMX_U32)ppBuf[0], width, height,
+                                        OMX_COLOR_FormatAndroidOpaque,
+                                        &pOutBuffer);
+                                if ((lockRet != OMX_ErrorNone) ||
+                                    (pOutBuffer == NULL)) {
+                                    SEC_OSAL_Log(SEC_LOG_ERROR,
+                                                 "Failed to lock opaque input buffer");
+                                    SEC_DataReset(pOMXComponent,
+                                                  INPUT_PORT_INDEX);
+                                    return OMX_FALSE;
+                                }
 
-                            SEC_OSAL_Memcpy(dstY, srcY, ySize);
-                            for (i = 0; i + 1 < chromaSize; i += 2) {
-                                dstUV[i] = srcVU[i + 1];
-                                dstUV[i + 1] = srcVU[i];
+                                dstY = (OMX_U8 *)pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].YVirAddr;
+                                dstUV = (OMX_U8 *)pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].CVirAddr;
+                                if (anbFormat == SEC_OSAL_ANB_FORMAT_ABGR8888) {
+                                    csc_ABGR8888_to_YUV420SP_NEON(
+                                            dstY, dstUV, pOutBuffer,
+                                            width, height);
+                                } else {
+                                    srcY = (OMX_U8 *)pOutBuffer;
+                                    if (physRet == OMX_ErrorNone &&
+                                        (OMX_U32)physBuf[1] >
+                                                (OMX_U32)physBuf[0]) {
+                                        srcChroma = srcY +
+                                                ((OMX_U32)physBuf[1] -
+                                                 (OMX_U32)physBuf[0]);
+                                    } else {
+                                        srcChroma = srcY + ySize;
+                                    }
+                                    SEC_OSAL_Memcpy(dstY, srcY, ySize);
+                                    if (anbFormat == SEC_OSAL_ANB_FORMAT_NV12) {
+                                        SEC_OSAL_Memcpy(dstUV, srcChroma,
+                                                        chromaSize);
+                                    } else {
+                                        for (i = 0; i + 1 < chromaSize;
+                                             i += 2) {
+                                            dstUV[i] = srcChroma[i + 1];
+                                            dstUV[i + 1] = srcChroma[i];
+                                        }
+                                    }
+                                }
+
+                                SEC_OSAL_UnlockANBHandle((OMX_U32)ppBuf[0]);
                             }
-
-                            SEC_OSAL_UnlockANBHandle((OMX_U32)ppBuf[0]);
                         }
                     }
 #endif
@@ -1004,6 +1092,12 @@ OMX_ERRORTYPE SEC_OMX_BufferProcess(OMX_HANDLETYPE hComponent)
 
     FunctionIn();
 
+    if (setpriority(PRIO_PROCESS, 0,
+                    SEC_OMX_ANDROID_PRIORITY_VIDEO) != 0) {
+        SEC_OSAL_Log(SEC_LOG_WARNING,
+                     "Could not set OMX video-buffer priority");
+    }
+
     while (!pSECComponent->bExitBufferProcessThread) {
         SEC_OSAL_SleepMillisec(0);
 
@@ -1050,18 +1144,46 @@ OMX_ERRORTYPE SEC_OMX_BufferProcess(OMX_HANDLETYPE hComponent)
                 SEC_OSAL_MutexLock(outputUseBuffer->bufferMutex);
                 ret = pSECComponent->sec_mfc_bufferProcess(pOMXComponent, inputData, outputData);
 
-                if (inputUseBuffer->remainDataLen == 0)
+                if (inputUseBuffer->remainDataLen == 0 &&
+                    ret == OMX_ErrorNone &&
+                    pVideoEnc->bCurrentInputNative == OMX_TRUE &&
+                    pVideoEnc->NBEncThread.bEncoderRun != OMX_FALSE) {
+                    if (pVideoEnc->pNativePendingInputBuffer == NULL) {
+                        pVideoEnc->pNativePendingInputBuffer =
+                                inputUseBuffer->bufferHeader;
+                        inputUseBuffer->dataValid = OMX_FALSE;
+                        inputUseBuffer->dataLen = 0;
+                        inputUseBuffer->remainDataLen = 0;
+                        inputUseBuffer->usedDataLen = 0;
+                        inputUseBuffer->bufferHeader = NULL;
+                        inputUseBuffer->nFlags = 0;
+                        inputUseBuffer->timeStamp = 0;
+                    } else {
+                        SEC_OSAL_Log(SEC_LOG_ERROR,
+                                     "Native MFC input ownership overlap");
+                        inputUseBuffer->dataValid =
+                                inputUseBuffer->bufferHeader != NULL
+                                ? OMX_TRUE : OMX_FALSE;
+                    }
+                } else if (inputUseBuffer->remainDataLen == 0 &&
+                           !(ret == OMX_ErrorInputDataEncodeYet &&
+                             pVideoEnc->bCurrentInputNative == OMX_TRUE)) {
                     SEC_InputBufferReturn(pOMXComponent);
-                else
-                    inputUseBuffer->dataValid = OMX_TRUE;
+                } else {
+                    inputUseBuffer->dataValid =
+                            inputUseBuffer->bufferHeader != NULL
+                            ? OMX_TRUE : OMX_FALSE;
+                }
 
                 SEC_OSAL_MutexUnlock(outputUseBuffer->bufferMutex);
                 SEC_OSAL_MutexUnlock(inputUseBuffer->bufferMutex);
 
                 if (ret == OMX_ErrorInputDataEncodeYet)
                     pSECComponent->reInputData = OMX_TRUE;
-                else
+                else {
                     pSECComponent->reInputData = OMX_FALSE;
+                    pVideoEnc->bCurrentInputNative = OMX_FALSE;
+                }
             }
 
             SEC_OSAL_MutexLock(outputUseBuffer->bufferMutex);

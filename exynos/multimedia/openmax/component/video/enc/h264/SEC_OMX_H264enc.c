@@ -27,6 +27,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
+#include <time.h>
 
 #include "SEC_OMX_Macros.h"
 #include "SEC_OMX_Basecomponent.h"
@@ -40,6 +42,8 @@
 #include "SEC_OMX_H264enc.h"
 #include "SsbSipMfcApi.h"
 #include "color_space_convertor.h"
+
+#define SEC_OMX_ANDROID_PRIORITY_VIDEO (-10)
 
 #undef  SEC_LOG_TAG
 #define SEC_LOG_TAG    "SEC_H264_ENC"
@@ -223,9 +227,18 @@ void Set_H264Enc_Param(SSBSIP_MFC_ENC_H264_PARAM *pH264Arg, SEC_OMX_BASECOMPONEN
     pH264Arg->LoopFilterDisable     = 1;    // 1: Loop Filter Disable, 0: Filter Enable
     pH264Arg->LoopFilterAlphaC0Offset = 0;
     pH264Arg->LoopFilterBetaOffset    = 0;
-    pH264Arg->SymbolMode       = 1;         // 0: CAVLC, 1: CABAC
+    pH264Arg->SymbolMode =
+            (pH264Enc->AVCComponent[OUTPUT_PORT_INDEX].eProfile ==
+             OMX_VIDEO_AVCProfileBaseline) ? 0 : 1; // 0: CAVLC, 1: CABAC
     pH264Arg->PictureInterlace = 0;
-    pH264Arg->Transform8x8Mode = 1;         // 0: 4x4, 1: allow 8x8
+    pH264Arg->Transform8x8Mode =
+            (pH264Enc->AVCComponent[OUTPUT_PORT_INDEX].eProfile ==
+             OMX_VIDEO_AVCProfileHigh) ? 1 : 0; // High profile only
+    if (pH264Enc->AVCComponent[OUTPUT_PORT_INDEX].eProfile ==
+        OMX_VIDEO_AVCProfileBaseline) {
+        _SEC_OSAL_Log(SEC_LOG_WARNING, SEC_LOG_TAG,
+                      "Hardware H.264 Baseline uses CAVLC and 4x4 transform");
+    }
     pH264Arg->DarkDisable     = 1;
     pH264Arg->SmoothDisable   = 1;
     pH264Arg->StaticDisable   = 1;
@@ -835,8 +848,17 @@ OMX_ERRORTYPE SEC_MFC_EncodeThread(OMX_HANDLETYPE hComponent)
     SEC_OMX_BASECOMPONENT *pSECComponent = (SEC_OMX_BASECOMPONENT *)pOMXComponent->pComponentPrivate;
     SEC_OMX_VIDEOENC_COMPONENT *pVideoEnc = (SEC_OMX_VIDEOENC_COMPONENT *)pSECComponent->hComponentHandle;
     SEC_H264ENC_HANDLE    *pH264Enc = (SEC_H264ENC_HANDLE *)pVideoEnc->hCodecHandle;
+    OMX_U32                measuredFrames = 0;
+    OMX_U64                totalEncodeUs = 0;
+    OMX_U32                maxEncodeUs = 0;
 
     FunctionIn();
+
+    if (setpriority(PRIO_PROCESS, 0,
+                    SEC_OMX_ANDROID_PRIORITY_VIDEO) != 0) {
+        SEC_OSAL_Log(SEC_LOG_WARNING,
+                     "Could not set MFC encode-worker priority");
+    }
 
     if (hComponent == NULL) {
         ret = OMX_ErrorBadParameter;
@@ -847,7 +869,38 @@ OMX_ERRORTYPE SEC_MFC_EncodeThread(OMX_HANDLETYPE hComponent)
         SEC_OSAL_SemaphoreWait(pVideoEnc->NBEncThread.hEncFrameStart);
 
         if (pVideoEnc->NBEncThread.bExitEncodeThread == OMX_FALSE) {
+            struct timespec startTime;
+            struct timespec endTime;
+            OMX_U64 elapsedUs;
+
+            clock_gettime(CLOCK_MONOTONIC, &startTime);
             pH264Enc->hMFCH264Handle.returnCodec = SsbSipMfcEncExe(pH264Enc->hMFCH264Handle.hMFCHandle);
+            clock_gettime(CLOCK_MONOTONIC, &endTime);
+
+            elapsedUs = (OMX_U64)(endTime.tv_sec - startTime.tv_sec) *
+                    1000000ULL;
+            if (endTime.tv_nsec >= startTime.tv_nsec) {
+                elapsedUs += (OMX_U64)(endTime.tv_nsec -
+                        startTime.tv_nsec) / 1000ULL;
+            } else {
+                elapsedUs -= 1000000ULL;
+                elapsedUs += (OMX_U64)(1000000000L + endTime.tv_nsec -
+                        startTime.tv_nsec) / 1000ULL;
+            }
+            totalEncodeUs += elapsedUs;
+            if (elapsedUs > maxEncodeUs)
+                maxEncodeUs = (OMX_U32)elapsedUs;
+            measuredFrames++;
+
+            if (measuredFrames == 150) {
+                _SEC_OSAL_Log(SEC_LOG_WARNING, SEC_LOG_TAG,
+                              "Hardware MFC cadence: avg %llu us, max %u us over %u frames",
+                              totalEncodeUs / measuredFrames, maxEncodeUs,
+                              measuredFrames);
+                measuredFrames = 0;
+                totalEncodeUs = 0;
+                maxEncodeUs = 0;
+            }
             SEC_OSAL_SemaphorePost(pVideoEnc->NBEncThread.hEncFrameEnd);
         }
     }
@@ -941,6 +994,16 @@ OMX_ERRORTYPE SEC_MFC_H264Enc_Init(OMX_COMPONENTTYPE *pOMXComponent)
     pVideoEnc->indexInputBuffer = 0;
 
     pVideoEnc->bFirstFrame = OMX_TRUE;
+#ifdef USE_METADATABUFFERTYPE
+    pVideoEnc->bNativeInputCapable =
+            (pSECInputPort->portDefinition.format.video.eColorFormat ==
+             OMX_COLOR_FormatAndroidOpaque) ? OMX_TRUE : OMX_FALSE;
+#else
+    pVideoEnc->bNativeInputCapable = OMX_FALSE;
+#endif
+    pVideoEnc->bCurrentInputNative = OMX_FALSE;
+    pVideoEnc->bNativeInputLogged = OMX_FALSE;
+    pVideoEnc->pNativePendingInputBuffer = NULL;
 
 #ifdef NONBLOCK_MODE_PROCESS
     pVideoEnc->NBEncThread.bExitEncodeThread = OMX_FALSE;
@@ -977,6 +1040,16 @@ OMX_ERRORTYPE SEC_MFC_H264Enc_Terminate(OMX_COMPONENTTYPE *pOMXComponent)
     pH264Enc = (SEC_H264ENC_HANDLE *)((SEC_OMX_VIDEOENC_COMPONENT *)pSECComponent->hComponentHandle)->hCodecHandle;
 #ifdef NONBLOCK_MODE_PROCESS
     if (pVideoEnc->NBEncThread.hNBEncodeThread != NULL) {
+        if (pVideoEnc->NBEncThread.bEncoderRun != OMX_FALSE) {
+            SEC_OSAL_SemaphoreWait(pVideoEnc->NBEncThread.hEncFrameEnd);
+            pVideoEnc->NBEncThread.bEncoderRun = OMX_FALSE;
+        }
+        if (pVideoEnc->pNativePendingInputBuffer != NULL) {
+            OMX_BUFFERHEADERTYPE *pendingBuffer =
+                    pVideoEnc->pNativePendingInputBuffer;
+            pVideoEnc->pNativePendingInputBuffer = NULL;
+            SEC_OMX_InputBufferReturnDirect(pOMXComponent, pendingBuffer);
+        }
         pVideoEnc->NBEncThread.bExitEncodeThread = OMX_TRUE;
         SEC_OSAL_SemaphorePost(pVideoEnc->NBEncThread.hEncFrameStart);
         SEC_OSAL_ThreadTerminate(pVideoEnc->NBEncThread.hNBEncodeThread);
@@ -1005,6 +1078,35 @@ EXIT:
 
     return ret;
 }
+
+#ifdef USE_METADATABUFFERTYPE
+static OMX_ERRORTYPE SEC_MFC_H264_GetNativeInput(
+        SEC_OMX_DATA *pInputData, MFC_ENC_ADDR_INFO *pAddrInfo)
+{
+    OMX_PTR ppBuf[3] = { NULL, NULL, NULL };
+    OMX_PTR physBuf[2] = { NULL, NULL };
+    OMX_ERRORTYPE ret;
+
+    if (pInputData == NULL || pAddrInfo == NULL)
+        return OMX_ErrorBadParameter;
+
+    ret = SEC_OSAL_GetInfoFromMetaData(pInputData, ppBuf);
+    if (ret != OMX_ErrorNone || ppBuf[0] == NULL)
+        return OMX_ErrorBadParameter;
+
+    ret = SEC_OSAL_GetPhysANBHandle((OMX_U32)ppBuf[0], physBuf);
+    if (ret != OMX_ErrorNone || physBuf[0] == NULL || physBuf[1] == NULL)
+        return OMX_ErrorUnsupportedSetting;
+
+    if ((((OMX_U32)physBuf[0] & 0xffff) != 0) ||
+        (((OMX_U32)physBuf[1] & 0x7ff) != 0))
+        return OMX_ErrorUnsupportedSetting;
+
+    pAddrInfo->pAddrY = physBuf[0];
+    pAddrInfo->pAddrC = physBuf[1];
+    return OMX_ErrorNone;
+}
+#endif
 
 OMX_ERRORTYPE SEC_MFC_H264_Encode_Nonblock(OMX_COMPONENTTYPE *pOMXComponent, SEC_OMX_DATA *pInputData, SEC_OMX_DATA *pOutputData)
 {
@@ -1075,8 +1177,31 @@ OMX_ERRORTYPE SEC_MFC_H264_Encode_Nonblock(OMX_COMPONENTTYPE *pOMXComponent, SEC
         pInputInfo->CPhyAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].CPhyAddr;
         pInputInfo->YVirAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].YVirAddr;
         pInputInfo->CVirAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].CVirAddr;
+        pVideoEnc->bCurrentInputNative = OMX_FALSE;
     } else {
         switch (pSECPort->portDefinition.format.video.eColorFormat) {
+#ifdef USE_METADATABUFFERTYPE
+        case OMX_COLOR_FormatAndroidOpaque:
+            if (pVideoEnc->bCurrentInputNative == OMX_TRUE) {
+                ret = SEC_MFC_H264_GetNativeInput(pInputData, &addrInfo);
+                if (ret != OMX_ErrorNone) {
+                    SEC_OSAL_Log(SEC_LOG_ERROR,
+                                 "Could not resolve native MFC input planes");
+                    ret = OMX_ErrorUndefined;
+                    goto EXIT;
+                }
+                pInputInfo->YPhyAddr = addrInfo.pAddrY;
+                pInputInfo->CPhyAddr = addrInfo.pAddrC;
+                pInputInfo->YVirAddr = NULL;
+                pInputInfo->CVirAddr = NULL;
+                break;
+            }
+            pInputInfo->YPhyAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].YPhyAddr;
+            pInputInfo->CPhyAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].CPhyAddr;
+            pInputInfo->YVirAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].YVirAddr;
+            pInputInfo->CVirAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].CVirAddr;
+            break;
+#endif
         case OMX_SEC_COLOR_FormatNV12TPhysicalAddress:
         case OMX_SEC_COLOR_FormatNV12LPhysicalAddress: {
 #ifndef USE_METADATABUFFERTYPE
@@ -1122,6 +1247,13 @@ OMX_ERRORTYPE SEC_MFC_H264_Encode_Nonblock(OMX_COMPONENTTYPE *pOMXComponent, SEC
         if (pVideoEnc->NBEncThread.bEncoderRun != OMX_FALSE) {
             SEC_OSAL_SemaphoreWait(pVideoEnc->NBEncThread.hEncFrameEnd);
             pVideoEnc->NBEncThread.bEncoderRun = OMX_FALSE;
+            if (pVideoEnc->pNativePendingInputBuffer != NULL) {
+                OMX_BUFFERHEADERTYPE *pendingBuffer =
+                        pVideoEnc->pNativePendingInputBuffer;
+                pVideoEnc->pNativePendingInputBuffer = NULL;
+                SEC_OMX_InputBufferReturnDirect(pOMXComponent,
+                                                pendingBuffer);
+            }
         }
 
         SEC_OSAL_SleepMillisec(0);
@@ -1273,6 +1405,28 @@ OMX_ERRORTYPE SEC_MFC_H264_Encode_Block(OMX_COMPONENTTYPE *pOMXComponent, SEC_OM
 
     pSECPort = &pSECComponent->pSECPort[INPUT_PORT_INDEX];
     switch (pSECPort->portDefinition.format.video.eColorFormat) {
+#ifdef USE_METADATABUFFERTYPE
+    case OMX_COLOR_FormatAndroidOpaque:
+        if (pVideoEnc->bCurrentInputNative == OMX_TRUE) {
+            returnCodec = SEC_MFC_H264_GetNativeInput(pInputData, &addrInfo);
+            if (returnCodec != OMX_ErrorNone) {
+                SEC_OSAL_Log(SEC_LOG_ERROR,
+                             "Could not resolve native MFC input planes");
+                ret = OMX_ErrorUndefined;
+                goto EXIT;
+            }
+            pInputInfo->YPhyAddr = addrInfo.pAddrY;
+            pInputInfo->CPhyAddr = addrInfo.pAddrC;
+            pInputInfo->YVirAddr = NULL;
+            pInputInfo->CVirAddr = NULL;
+            break;
+        }
+        pInputInfo->YPhyAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].YPhyAddr;
+        pInputInfo->CPhyAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].CPhyAddr;
+        pInputInfo->YVirAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].YVirAddr;
+        pInputInfo->CVirAddr = pVideoEnc->MFCEncInputBuffer[pVideoEnc->indexInputBuffer].CVirAddr;
+        break;
+#endif
     case OMX_SEC_COLOR_FormatNV12TPhysicalAddress:
     case OMX_SEC_COLOR_FormatNV12LPhysicalAddress: {
 #ifndef USE_METADATABUFFERTYPE

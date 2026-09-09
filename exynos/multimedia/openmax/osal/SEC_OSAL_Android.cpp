@@ -37,11 +37,15 @@
 #include <hardware/hardware.h>
 #include <media/hardware/MetadataBufferType.h>
 
+#include "gralloc_priv.h"
+#include "sec_format.h"
+
 #include "SEC_OSAL_Semaphore.h"
 #include "SEC_OMX_Baseport.h"
 #include "SEC_OMX_Basecomponent.h"
 #include "SEC_OMX_Macros.h"
 #include "SEC_OMX_Vdec.h"
+#include "SEC_OSAL_Android.h"
 
 /* Samsung Exynos4 private gralloc usage extension (missing from upstream headers) */
 #ifndef GRALLOC_USAGE_YUV_ADDR
@@ -216,22 +220,65 @@ OMX_ERRORTYPE SEC_OSAL_GetPhysANBHandle(
     FunctionIn();
 
     OMX_ERRORTYPE ret = OMX_ErrorNone;
-    GraphicBufferMapper &mapper = GraphicBufferMapper::get();
     buffer_handle_t bufferHandle = (buffer_handle_t) handle;
+    private_handle_t *hnd = private_handle_t::dynamicCast(bufferHandle);
 
     SEC_OSAL_Log(SEC_LOG_TRACE, "%s: handle: 0x%x", __func__, handle);
 
-/*
-    if (mapper.getphys(bufferHandle, paddr) != 0) {
-        SEC_OSAL_Log(SEC_LOG_ERROR, "%s: mapper.getphys() fail", __func__);
-        ret = OMX_ErrorUndefined;
+    if (paddr == NULL) {
+        ret = OMX_ErrorBadParameter;
         goto EXIT;
     }
-*/
+    paddr[0] = NULL;
+    paddr[1] = NULL;
+
+    if (hnd == NULL ||
+        !(hnd->flags & private_handle_t::PRIV_FLAGS_USES_ION) ||
+        hnd->paddr == 0 || hnd->uoffset == 0) {
+        SEC_OSAL_Log(SEC_LOG_WARNING,
+                     "%s: native buffer is not contiguous ION", __func__);
+        ret = OMX_ErrorUnsupportedSetting;
+        goto EXIT;
+    }
+
+    paddr[0] = (OMX_PTR)hnd->paddr;
+    paddr[1] = (OMX_PTR)(hnd->paddr + hnd->uoffset);
 EXIT:
     FunctionOut();
 
     return ret;
+}
+
+OMX_ERRORTYPE SEC_OSAL_GetANBFormatHandle(
+    OMX_IN OMX_U32 handle,
+    OMX_OUT SEC_OSAL_ANB_FORMATTYPE *format)
+{
+    if (format == NULL)
+        return OMX_ErrorBadParameter;
+
+    *format = SEC_OSAL_ANB_FORMAT_UNKNOWN;
+    buffer_handle_t bufferHandle = (buffer_handle_t)handle;
+    private_handle_t *hnd = private_handle_t::dynamicCast(bufferHandle);
+    if (hnd == NULL)
+        return OMX_ErrorBadParameter;
+
+    switch (hnd->format) {
+    case HAL_PIXEL_FORMAT_YCbCr_420_SP:
+        *format = SEC_OSAL_ANB_FORMAT_NV12;
+        break;
+    case HAL_PIXEL_FORMAT_YCrCb_420_SP:
+        *format = SEC_OSAL_ANB_FORMAT_NV21;
+        break;
+    case HAL_PIXEL_FORMAT_RGBA_8888:
+    case HAL_PIXEL_FORMAT_RGBX_8888:
+    case HAL_PIXEL_FORMAT_BGRA_8888:
+        *format = SEC_OSAL_ANB_FORMAT_ABGR8888;
+        break;
+    default:
+        return OMX_ErrorUnsupportedSetting;
+    }
+
+    return OMX_ErrorNone;
 }
 
 OMX_ERRORTYPE SEC_OSAL_LockANB(
