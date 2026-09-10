@@ -2257,6 +2257,7 @@ static int out_open_pcm_devices(struct stream_out *out)
 
         if (pcm_device->pcm && !pcm_is_ready(pcm_device->pcm)) {
             ALOGE("%s: %s", __func__, pcm_get_error(pcm_device->pcm));
+            pcm_close(pcm_device->pcm);
             pcm_device->pcm = NULL;
             ret = -EIO;
             goto error_open;
