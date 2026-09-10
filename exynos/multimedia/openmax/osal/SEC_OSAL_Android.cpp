@@ -234,6 +234,7 @@ OMX_ERRORTYPE SEC_OSAL_GetPhysANBHandle(
 
     if (hnd == NULL ||
         !(hnd->flags & private_handle_t::PRIV_FLAGS_USES_ION) ||
+        !(hnd->flags & private_handle_t::PRIV_FLAGS_CONTIGUOUS_ION) ||
         hnd->paddr == 0 || hnd->uoffset == 0) {
         SEC_OSAL_Log(SEC_LOG_WARNING,
                      "%s: native buffer is not contiguous ION", __func__);

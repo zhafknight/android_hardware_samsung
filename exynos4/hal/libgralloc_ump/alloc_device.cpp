@@ -228,11 +228,16 @@ int gralloc_alloc_fimc1(size_t size, int usage,
 }
 
 static int gralloc_alloc_ion(alloc_device_t *dev, size_t size, int usage,
-							 int format, ion_buffer *ion_fd, ion_phys_addr_t *ion_paddr,
+							 int format, bool physically_contiguous,
+							 ion_buffer *ion_fd, ion_phys_addr_t *ion_paddr,
 							 int *priv_alloc_flag, ump_handle *ump_mem_handle) {
 	unsigned int ion_flags = 0;
 	unsigned int ion_alignment = 0;
 	private_module_t* m;
+
+    *ion_fd = -1;
+    *ion_paddr = 0;
+    *ump_mem_handle = UMP_INVALID_MEMORY_HANDLE;
 
     if (!ion_dev_open) {
         ALOGE("%s ERROR, failed to open ion", __func__);
@@ -241,7 +246,7 @@ static int gralloc_alloc_ion(alloc_device_t *dev, size_t size, int usage,
 
     m = reinterpret_cast<private_module_t*>(dev->common.module);
 
-    if (usage < 0 || usage & GRALLOC_USAGE_HWC_HWOVERLAY )
+    if (usage < 0 || usage & GRALLOC_USAGE_HWC_HWOVERLAY)
     {
         if ((format == HAL_PIXEL_FORMAT_RGBA_8888) || (format == HAL_PIXEL_FORMAT_RGB_565)) {
             *priv_alloc_flag |= (private_handle_t::PRIV_FLAGS_USES_ION | private_handle_t::PRIV_FLAGS_USES_HDMI);
@@ -252,14 +257,18 @@ static int gralloc_alloc_ion(alloc_device_t *dev, size_t size, int usage,
         *priv_alloc_flag |= private_handle_t::PRIV_FLAGS_USES_ION;
     }
 
+    if (physically_contiguous)
+        *priv_alloc_flag |= private_handle_t::PRIV_FLAGS_CONTIGUOUS_ION;
+
     if (usage & GRALLOC_USAGE_PRIVATE_NONECACHE) {
         *priv_alloc_flag |= private_handle_t::PRIV_FLAGS_NONE_CACHED;
-        ion_flags = ION_EXYNOS_NONCACHE_MASK | ION_HEAP_EXYNOS_CONTIG_MASK;
-    } else {
-        ion_flags = ION_HEAP_EXYNOS_CONTIG_MASK;
+        ion_flags |= ION_EXYNOS_NONCACHE_MASK;
     }
+    ion_flags |= physically_contiguous ? ION_HEAP_EXYNOS_CONTIG_MASK
+                                       : ION_HEAP_EXYNOS_MASK;
 
-    if ((usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) &&
+    if (physically_contiguous &&
+        (usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) &&
         (format == HAL_PIXEL_FORMAT_YCbCr_420_SP ||
          format == HAL_PIXEL_FORMAT_YCrCb_420_SP))
         ion_alignment = 64 * 1024;
@@ -270,7 +279,15 @@ static int gralloc_alloc_ion(alloc_device_t *dev, size_t size, int usage,
         return -1;
     }
 
-    *ion_paddr = ion_getphys(m->ion_client, *ion_fd);
+    if (physically_contiguous) {
+        *ion_paddr = ion_getphys(m->ion_client, *ion_fd);
+        if (*ion_paddr == 0) {
+            ALOGE("%s Failed to obtain contiguous ION physical address", __func__);
+            ion_free(*ion_fd);
+            *ion_fd = -1;
+            return -ENOMEM;
+        }
+    }
 
 /* TODO: #ifdef SAMSUNG_EXYNOS_CACHE_UMP here...*/
     if (usage & GRALLOC_USAGE_PRIVATE_NONECACHE) {
@@ -279,7 +296,17 @@ static int gralloc_alloc_ion(alloc_device_t *dev, size_t size, int usage,
     } else {
         ALOGD_IF(debug_level > 0, "%s FIMC1 cached", __func__);
         *ump_mem_handle = ump_ref_drv_ion_import(*ion_fd, UMP_REF_DRV_CONSTRAINT_USE_CACHE);
-        ump_cpu_msync_now((ump_handle)*ump_mem_handle, UMP_MSYNC_CLEAN_AND_INVALIDATE, NULL, 0);
+        if (*ump_mem_handle != UMP_INVALID_MEMORY_HANDLE)
+            ump_cpu_msync_now((ump_handle)*ump_mem_handle,
+                              UMP_MSYNC_CLEAN_AND_INVALIDATE, NULL, 0);
+    }
+    if (*ump_mem_handle == UMP_INVALID_MEMORY_HANDLE) {
+        ALOGE("%s Failed to import %s ION allocation into UMP", __func__,
+              physically_contiguous ? "contiguous" : "non-contiguous");
+        ion_free(*ion_fd);
+        *ion_fd = -1;
+        *ion_paddr = 0;
+        return -ENOMEM;
     }
     return 0;
 }
@@ -291,7 +318,7 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
     ump_handle ump_mem_handle;
     void *cpu_ptr;
     ump_secure_id ump_id;
-    ion_buffer ion_fd = 0;
+    ion_buffer ion_fd = -1;
     ion_phys_addr_t ion_paddr = 0;
     int priv_alloc_flag = private_handle_t::PRIV_FLAGS_USES_UMP;
     int ret = 0;
@@ -305,12 +332,34 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
         return gralloc_alloc_fimc1(size, usage, pHandle, w, h, format, bpp, stride_raw, stride);
     }
 
-    ret = -1;
+    const bool physically_contiguous =
+            (usage & GRALLOC_USAGE_CAMERA3_CONTIGUOUS) ||
+            (usage & GRALLOC_USAGE_HWC_HWOVERLAY) ||
+            (usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) ||
+            (usage & GRALLOC_USAGE_HW_ION);
+    const bool shareable_ion = physically_contiguous ||
+            (usage & (GRALLOC_USAGE_HW_RENDER |
+                      GRALLOC_USAGE_HW_TEXTURE));
 
-    if (ret < 0) {
-        // may happen if ion carveout is out of memory, or if the
-        // handle is not needed for HWC
-        ALOGD("%s: Falling back to UMP-only allocation (size: %d)...", __func__, size);
+    ret = -1;
+    if (shareable_ion) {
+        ALOGD("%s: Allocating %s ION graphic buffer (size: %d)...", __func__,
+              physically_contiguous ? "contiguous" : "non-contiguous", size);
+        priv_alloc_flag |= private_handle_t::PRIV_FLAGS_GRAPHICBUFFER;
+        ret = gralloc_alloc_ion(dev, size, usage, format,
+                                physically_contiguous, &ion_fd, &ion_paddr,
+                                &priv_alloc_flag, &ump_mem_handle);
+        if (ret < 0) {
+            ALOGE("%s: Required %s ION allocation failed; refusing unsafe UMP fallback",
+                  __func__, physically_contiguous ? "contiguous" : "shareable");
+            return ret;
+        }
+    }
+
+    if (!shareable_ion) {
+        ALOGD_IF(debug_level > 0,
+                 "%s: Allocating process-local UMP buffer (size: %d)...",
+                 __func__, size);
         priv_alloc_flag = private_handle_t::PRIV_FLAGS_USES_UMP;
 #ifdef SAMSUNG_EXYNOS_CACHE_UMP
         if ((usage & GRALLOC_USAGE_SW_READ_MASK) == GRALLOC_USAGE_SW_READ_OFTEN) {
@@ -385,8 +434,14 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
                     }
                     hnd->voffset = ((EXYNOS4_ALIGN((hnd->width / 2), 16) * EXYNOS4_ALIGN((hnd->height / 2), 16)));
                     hnd->paddr = ion_paddr;
-                    if (ion_fd >= 0)
-                        hnd->ion_memory = ion_map(ion_fd, size, 0);
+                    if (ion_fd >= 0) {
+                        void* ion_memory = ion_map(ion_fd, size, 0);
+                        if (ion_memory != MAP_FAILED)
+                            hnd->ion_memory = ion_memory;
+                        else
+                            ALOGW("%s could not create secondary ION mapping: %s",
+                                  __func__, strerror(errno));
+                    }
 
                     ALOGD_IF(debug_level > 0, "%s hnd->format=0x%x hnd->uoffset=%d hnd->voffset=%d hnd->paddr=%x hnd->bpp=%d", __func__, hnd->format, hnd->uoffset, hnd->voffset, hnd->paddr, hnd->bpp);
 
@@ -417,6 +472,9 @@ static int gralloc_alloc_buffer(alloc_device_t* dev, size_t size, int usage,
     } else {
         ALOGE("%s failed to allocate UMP memory", __func__);
     }
+
+    if (ion_fd >= 0)
+        ion_free(ion_fd);
 
     return -1;
 }

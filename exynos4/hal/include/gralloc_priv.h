@@ -35,6 +35,7 @@
 #define GRALLOC_USAGE_YUV_ADDR          0x04000000U
 #define GRALLOC_USAGE_CAMERA            0x08000000U
 #define GRALLOC_USAGE_HWC_HWOVERLAY     0x20000000U
+#define GRALLOC_USAGE_CAMERA3_CONTIGUOUS 0x40000000U
 
 #include <stdint.h>
 #include <pthread.h>
@@ -113,7 +114,8 @@ struct private_handle_t {
         PRIV_FLAGS_USES_HDMI     = 0x00000010,
         PRIV_FLAGS_USES_ION      = 0x00000020,
         PRIV_FLAGS_NONE_CACHED   = 0x00000040,
-        PRIV_FLAGS_GRAPHICBUFFER = 0x00000080
+        PRIV_FLAGS_GRAPHICBUFFER = 0x00000080,
+        PRIV_FLAGS_CONTIGUOUS_ION = 0x00000100
     };
 
     enum {
@@ -240,7 +242,10 @@ struct private_handle_t {
 
     bool usesPhysicallyContiguousMemory()
     {
-        return (flags & PRIV_FLAGS_FRAMEBUFFER) ? true : false;
+        return (flags & (PRIV_FLAGS_FRAMEBUFFER |
+                         PRIV_FLAGS_USES_IOCTL |
+                         PRIV_FLAGS_USES_HDMI |
+                         PRIV_FLAGS_CONTIGUOUS_ION)) != 0;
     }
 
     static int validate(const native_handle* h)
